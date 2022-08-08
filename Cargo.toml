@@ -9,3 +9,8 @@ rand = {version = "0.6", default-features = false, optional = true}
 
 [dev-dependencies]
 rand = "0.6"
+criterion = "0.3"
+
+[[bench]]
+name = "coin_selection_benchmark"
+harness = false
