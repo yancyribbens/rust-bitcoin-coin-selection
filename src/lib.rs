@@ -99,37 +99,32 @@ pub fn find_solution<T: Utxo>(
         return None;
     }
 
-    for m in 0..utxo_pool_length {
-        let mut curr_sum = 0;
-        let mut slice_remainder = remainder;
+    let mut curr_sum = 0;
+    for i in 0..utxo_pool_length {
 
-        for n in m..utxo_pool_length {
-            if slice_remainder + curr_sum < lower_bound {
-                break;
-            }
-
-            let utxo_value = utxo_pool[n].get_value();
-            curr_sum += utxo_value;
-            curr_selection[n] = true;
-
-            if curr_sum == lower_bound {
-                return Some(curr_selection);
-            }
-
-            if curr_sum > lower_bound {
-                if curr_sum < upper_bound {
-                    best_selection = Some(curr_selection.clone());
-                }
-
-                curr_selection[n] = false;
-                curr_sum -= utxo_value;
-            }
-
-            slice_remainder -= utxo_value;
+        if remainder + curr_sum < lower_bound {
+            break;
         }
 
-        remainder -= utxo_pool[m].get_value();
-        curr_selection[m] = false;
+        let utxo_value = utxo_pool[i].get_value();
+
+        curr_sum += utxo_value;
+        curr_selection[i] = true;
+
+        if curr_sum == lower_bound {
+            return Some(curr_selection);
+        }
+
+        if curr_sum > lower_bound {
+            if curr_sum > upper_bound {
+                curr_selection[i] = false;
+                curr_sum -= utxo_value;
+            } else {
+                best_selection = Some(curr_selection.clone());
+            }
+        }
+
+        remainder -= utxo_value;
     }
 
     best_selection
