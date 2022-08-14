@@ -139,10 +139,10 @@ pub fn find_solution<T: Utxo>(
 mod tests {
     use crate::*;
 
-    const ONE_BTC: u64 = 100000000;
-    const TWO_BTC: u64 = 2 * 100000000;
-    const THREE_BTC: u64 = 3 * 100000000;
-    const FOUR_BTC: u64 = 4 * 100000000;
+    const ONE_BTC: u64 = 100_000_000;
+    const TWO_BTC: u64 = 2 * ONE_BTC;
+    const THREE_BTC: u64 = 3 * ONE_BTC;
+    const FOUR_BTC: u64 = 4 * ONE_BTC;
 
     const UTXO_POOL: [MinimalUtxo; 4] = [
         MinimalUtxo { value: ONE_BTC },
@@ -151,7 +151,7 @@ mod tests {
         MinimalUtxo { value: FOUR_BTC },
     ];
 
-    const COST_OF_CHANGE: u64 = 50000000;
+    const COST_OF_CHANGE: u64 = 50_000_000;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct MinimalUtxo {
@@ -298,19 +298,19 @@ mod tests {
 
     #[test]
     fn select_coins_random_test() {
-        let mut test_utxo_pool = vec![MinimalUtxo { value: 5000000000 }];
+        let mut test_utxo_pool = vec![MinimalUtxo { value: 5_000_000_000 }];
 
         let utxo_match =
-            select_coins(100000358, 20, &mut test_utxo_pool).expect("Did not find match");
+            select_coins(100_000_358, 20, &mut test_utxo_pool).expect("Did not find match");
 
         assert_eq!(1, utxo_match.len());
     }
 
     #[test]
     fn select_coins_random_fail_test() {
-        let mut test_utxo_pool = vec![MinimalUtxo { value: 5000000000 }];
+        let mut test_utxo_pool = vec![MinimalUtxo { value: 5_000_000_000 }];
 
-        let utxo_match = select_coins(5000000358, 20, &mut test_utxo_pool);
+        let utxo_match = select_coins(5_000_000_358, 20, &mut test_utxo_pool);
 
         assert!(utxo_match.is_none());
     }
