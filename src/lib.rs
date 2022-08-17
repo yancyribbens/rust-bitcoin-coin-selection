@@ -290,6 +290,15 @@ mod tests {
     }
 
     #[test]
+    fn select_coins_from_large_utxo_pool() {
+        let utxo_range = ONE_BTC..ONE_BTC + 100_000;
+        let mut utxo_pool: Vec<_> = utxo_range.map(|v| MinimalUtxo { value: v }).collect();
+        let utxo_match =
+            select_coins_bnb(ONE_BTC + 1, 20, &mut utxo_pool).expect("Did not find a match");
+        assert_eq!(1, utxo_match.len());
+    }
+
+    #[test]
     fn select_coins_random_test() {
         let mut test_utxo_pool = vec![MinimalUtxo {
             value: 5_000_000_000,
