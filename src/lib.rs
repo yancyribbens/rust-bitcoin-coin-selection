@@ -85,10 +85,9 @@ pub fn find_solution<T: Utxo>(
         s
     });
 
-    let utxo_pool_length = utxo_pool.len();
     utxo_pool.sort_by_key(|u| Reverse(u.get_value()));
 
-    let mut curr_selection: Vec<bool> = vec![false; utxo_pool_length];
+    let mut curr_selection: Vec<bool> = vec![false; utxo_pool.len()];
     let mut best_selection = None;
     let mut remainder = utxo_sum;
 
@@ -100,12 +99,12 @@ pub fn find_solution<T: Utxo>(
     }
 
     let mut curr_sum = 0;
-    for i in 0..utxo_pool_length {
+    for (i, utxo) in utxo_pool.iter().enumerate() {
         if remainder + curr_sum < lower_bound {
             break;
         }
 
-        let utxo_value = utxo_pool[i].get_value();
+        let utxo_value = utxo.get_value();
 
         curr_sum += utxo_value;
         curr_selection[i] = true;
