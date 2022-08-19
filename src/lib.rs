@@ -85,6 +85,10 @@ pub fn find_solution<T: Utxo>(
         s
     });
 
+    if utxo_sum < target {
+        return None;
+    }
+
     utxo_pool.sort_by_key(|u| Reverse(u.get_value()));
 
     let mut curr_selection: Vec<bool> = vec![false; utxo_pool.len()];
@@ -93,10 +97,6 @@ pub fn find_solution<T: Utxo>(
 
     let lower_bound = target;
     let upper_bound = cost_of_change + lower_bound;
-
-    if utxo_sum < lower_bound {
-        return None;
-    }
 
     let mut curr_sum = 0;
     for (i, utxo) in utxo_pool.iter().enumerate() {
