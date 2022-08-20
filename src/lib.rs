@@ -303,6 +303,23 @@ mod tests {
     }
 
     #[test]
+    fn select_coins_bnb_that_requires_backtrack() {
+        let mut utxo_pool: [MinimalUtxo; 3] = [
+            MinimalUtxo { value: TWO_BTC + 1 },
+            MinimalUtxo { value: TWO_BTC },
+            MinimalUtxo { value: TWO_BTC - 1},
+        ];
+
+        let utxo_match = select_coins_bnb(TWO_BTC + TWO_BTC - 1, 0, &mut utxo_pool).unwrap();
+
+        // The most optiomal solution is selectiong the last two utxos, which requires
+        // the first utxo to be discarded.
+        assert_eq!(2, utxo_match.len());
+        assert_eq!(TWO_BTC, utxo_match[0].get_value());
+        assert_eq!(TWO_BTC - 1, utxo_match[1].get_value());
+    }
+
+    #[test]
     fn select_coins_from_large_utxo_pool() {
         let utxo_range = ONE_BTC..ONE_BTC + 100_000;
         let mut utxo_pool: Vec<_> = utxo_range.map(|v| MinimalUtxo { value: v }).collect();
