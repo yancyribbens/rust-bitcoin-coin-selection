@@ -15,7 +15,7 @@ keywords = ["crypto", "bitcoin"]
 readme = "README.md"
 
 [dependencies]
-bitcoin = { git="https://github.com/yancyribbens/rust-bitcoin", rev="2f109442e30d74fb7502e7fd1ce2075a67262cd5" }
+bitcoin = { git="https://github.com/yancyribbens/rust-bitcoin", rev="14e3bc" }
 rand = {version = "0.8.5", default-features = false, optional = true}
 
 [dev-dependencies]
@@ -24,10 +24,10 @@ rust-bitcoin-coin-selection = {path = ".", features = ["rand"]}
 rand = "0.8.5"
 
 [patch.crates-io]
-bitcoin_hashes = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="2f109442e30d74fb7502e7fd1ce2075a67262cd5"  }
-bitcoin-io = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="2f109442e30d74fb7502e7fd1ce2075a67262cd5" } 
-bitcoin-units = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="2f109442e30d74fb7502e7fd1ce2075a67262cd5" }
-bitcoin-internals = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="2f109442e30d74fb7502e7fd1ce2075a67262cd5" }
+bitcoin_hashes = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="14e3bc" }
+bitcoin-io = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="14e3bc" }
+bitcoin-units = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="14e3bc" }
+bitcoin-internals = { git = "https://github.com/yancyribbens/rust-bitcoin", rev="14e3bc" }
 
 [[bench]]
 name = "coin_selection"

@@ -27,7 +27,6 @@ use bitcoin::Weight;
 
 pub use crate::branch_and_bound::select_coins_bnb;
 use crate::single_random_draw::select_coins_srd;
-use bitcoin::blockdata::transaction::TxIn;
 use rand::thread_rng;
 
 // https://github.com/bitcoin/bitcoin/blob/f722a9bd132222d9d5cd503b5af25c905b205cdb/src/wallet/coinselection.h#L20
@@ -46,14 +45,16 @@ pub struct WeightedUtxo {
     pub utxo: TxOut,
 }
 
-impl WeightedUtxo {
-    fn effective_value(&self, fee_rate: FeeRate) -> Option<SignedAmount> {
-        let signed_input_fee = self.calculate_fee(fee_rate)?.to_signed().ok()?;
-        self.utxo.value.to_signed().ok()?.checked_sub(signed_input_fee)
-    }
+// Serialized length of a u32.
+const SEQUENCE_SIZE: u64 = 4;
+// The serialized lengths of txid and vout.
+const OUTPOINT_SIZE: u64 = 32 + 4;
+const TX_IN_BASE_WEIGHT: Weight =
+        Weight::from_vb_unwrap(OUTPOINT_SIZE + SEQUENCE_SIZE);
 
+impl WeightedUtxo {
     fn calculate_fee(&self, fee_rate: FeeRate) -> Option<Amount> {
-        let weight = self.satisfaction_weight.checked_add(TxIn::BASE_WEIGHT)?;
+        let weight = self.satisfaction_weight.checked_add(TX_IN_BASE_WEIGHT)?;
         fee_rate.checked_mul_by_weight(weight)
     }
 

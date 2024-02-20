@@ -9,6 +9,7 @@ use bitcoin::amount::CheckedSum;
 use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::SignedAmount;
+use bitcoin::blockdata::transaction::effective_value;
 
 /// Select coins bnb performs a depth first branch and bound search.  The search traverses a
 /// binary tree with a maximum depth n where n is the size of the UTXO pool to be searched.
@@ -159,7 +160,7 @@ pub fn select_coins_bnb(
     let mut w_utxos: Vec<(Amount, SignedAmount, &WeightedUtxo)> = weighted_utxos
         .iter()
         // calculate effective_value and waste for each w_utxo.
-        .map(|wu| (wu.effective_value(fee_rate), wu.waste(fee_rate, long_term_fee_rate), wu))
+        .map(|wu| (effective_value(fee_rate, wu.satisfaction_weight, wu.utxo.value), wu.waste(fee_rate, long_term_fee_rate), wu))
         // remove utxos that either had an error in the effective_value or waste calculation.
         .filter(|(eff_val, waste, _)| !eff_val.is_none() && !waste.is_none())
         // unwrap the option type since we know they are not None (see previous step).
