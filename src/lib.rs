@@ -52,15 +52,22 @@ const OUTPOINT_SIZE: u64 = 32 + 4;
 const TX_IN_BASE_WEIGHT: Weight =
         Weight::from_vb_unwrap(OUTPOINT_SIZE + SEQUENCE_SIZE);
 
-impl WeightedUtxo {
-    fn calculate_fee(&self, fee_rate: FeeRate) -> Option<Amount> {
-        let weight = self.satisfaction_weight.checked_add(TX_IN_BASE_WEIGHT)?;
-        fee_rate.checked_mul_by_weight(weight)
-    }
+// Predict the fee Amount to spend a UTXO.
+//
+// To predict the fee, the predicted weight is:
+// weight = satisfaction_weight + TX_IN base weight.
+// 
+// The fee is then calculated as:
+// fee = weight * fee_rate
+fn calculate_fee_prediction(satisfaction_weight: Weight, fee_rate: FeeRate) -> Option<Amount> {
+    let weight = satisfaction_weight.checked_add(TX_IN_BASE_WEIGHT)?;
+    fee_rate.checked_mul_by_weight(weight)
+}
 
+impl WeightedUtxo {
     fn waste(&self, fee_rate: FeeRate, long_term_fee_rate: FeeRate) -> Option<SignedAmount> {
-        let fee: SignedAmount = self.calculate_fee(fee_rate)?.to_signed().ok()?;
-        let lt_fee: SignedAmount = self.calculate_fee(long_term_fee_rate)?.to_signed().ok()?;
+        let fee: SignedAmount = calculate_fee_prediction(self.satisfaction_weight, fee_rate)?.to_signed().ok()?;
+        let lt_fee: SignedAmount = calculate_fee_prediction(self.satisfaction_weight, long_term_fee_rate)?.to_signed().ok()?;
         fee.checked_sub(lt_fee)
     }
 }
