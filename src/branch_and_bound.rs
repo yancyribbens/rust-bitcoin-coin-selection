@@ -4,12 +4,14 @@
 //!
 //! This module introduces the Branch and Bound Coin Selection Algorithm.
 
+use crate::calculate_waste;
 use crate::WeightedUtxo;
 use bitcoin::amount::CheckedSum;
+use bitcoin::blockdata::transaction::effective_value;
 use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::SignedAmount;
-use bitcoin::blockdata::transaction::effective_value;
+use bitcoin::Weight;
 
 /// Select coins bnb performs a depth first branch and bound search.  The search traverses a
 /// binary tree with a maximum depth n where n is the size of the UTXO pool to be searched.
@@ -122,13 +124,13 @@ use bitcoin::blockdata::transaction::effective_value;
 //  b) It's a high fee environment such that adding more utxos will increase current_waste.
 //
 // If either a or b is true, we consider the search path no longer viable to continue down.
-pub fn select_coins_bnb(
+pub fn select_coins_bnb<T: WeightedUtxo>(
     target: Amount,
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    weighted_utxos: &[WeightedUtxo],
-) -> Option<std::vec::IntoIter<&'_ WeightedUtxo>> {
+    weighted_utxos: &[T],
+) -> Option<std::vec::IntoIter<&'_ T>> {
     // Total_Tries in Core:
     // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
     const ITERATION_LIMIT: i32 = 100_000;
@@ -157,10 +159,16 @@ pub fn select_coins_bnb(
     // Creates a tuple of (effective_value, waste, weighted_utxo)
     // * filter out effective values and wastes that are None (error).
     // * filter out negative effective values.
-    let mut w_utxos: Vec<(Amount, SignedAmount, &WeightedUtxo)> = weighted_utxos
+    let mut w_utxos: Vec<(Amount, SignedAmount, &T)> = weighted_utxos
         .iter()
         // calculate effective_value and waste for each w_utxo.
-        .map(|wu| (effective_value(fee_rate, wu.satisfaction_weight, wu.utxo.value), wu.waste(fee_rate, long_term_fee_rate), wu))
+        .map(|wu| {
+            (
+                effective_value(fee_rate, wu.satisfaction_weight(), wu.utxo().value),
+                calculate_waste(Weight::ZERO, fee_rate, long_term_fee_rate),
+                wu,
+            )
+        })
         // remove utxos that either had an error in the effective_value or waste calculation.
         .filter(|(eff_val, waste, _)| !eff_val.is_none() && !waste.is_none())
         // unwrap the option type since we know they are not None (see previous step).
@@ -340,10 +348,10 @@ pub fn select_coins_bnb(
 
 // Copy the index list into a list such that for each
 // index, the corresponding w_utxo is copied.
-fn index_to_utxo_list(
+fn index_to_utxo_list<T: WeightedUtxo>(
     index_list: Option<Vec<usize>>,
-    wu: Vec<(Amount, SignedAmount, &WeightedUtxo)>,
-) -> Option<std::vec::IntoIter<&'_ WeightedUtxo>> {
+    wu: Vec<(Amount, SignedAmount, &T)>,
+) -> Option<std::vec::IntoIter<&'_ T>> {
     // Doing this to satisfy the borrow checker such that the
     // refs &WeightedUtxo in `wu` have the same lifetime as the
     // returned &WeightedUtxo.
