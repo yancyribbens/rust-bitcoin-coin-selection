@@ -548,6 +548,82 @@ mod tests {
     }
 
     #[test]
+    fn select_coins_extended_test() {
+        let target = Amount::from_str("18 BTC").unwrap();
+
+        let weighted_utxos = vec![
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("10 BTC").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("7 BTC").unwrap() + Amount::from_str("5 sats").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("6 BTC").unwrap() + Amount::from_str("5 sats").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("6 BTC").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("3 BTC").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("2 BTC").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            },
+            WeightedUtxo {
+                satisfaction_weight: Weight::ZERO,
+                utxo: TxOut {
+                    value: Amount::from_str("1 BTC").unwrap() + Amount::from_str("5 sats").unwrap(),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            }
+        ];
+
+        let wu = weighted_utxos.clone();
+
+        let list: Vec<_> = select_coins_bnb(
+            target,
+            Amount::from_str("50 sats").unwrap(),
+            FeeRate::ZERO,
+            FeeRate::ZERO,
+            &wu,
+        )
+        .unwrap()
+        .collect();
+
+        // 6.00000005, 6, 3, 2, 1.00000005
+        assert_eq!(list[0].utxo.value, Amount::from_str("6 BTC").unwrap() + Amount::from_str("5 sats").unwrap());
+        assert_eq!(list[1].utxo.value, Amount::from_str("6 BTC").unwrap());
+        assert_eq!(list[2].utxo.value, Amount::from_str("3 BTC").unwrap());
+        assert_eq!(list[3].utxo.value, Amount::from_str("2 BTC").unwrap());
+        assert_eq!(list[4].utxo.value, Amount::from_str("1 BTC").unwrap() + Amount::from_str("5 sats").unwrap());
+    }
+
+    #[test]
     fn select_coins_bnb_cost_of_change() {
         let target = Amount::from_str("1 cBTC").unwrap();
 
