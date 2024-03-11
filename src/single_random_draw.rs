@@ -30,32 +30,22 @@ use rand::seq::SliceRandom;
 /// /// * `rng` - used primarily by tests to make the selection deterministic.
 pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     target: Amount,
-    fee_rate: FeeRate,
-    weighted_utxos: &'a [WeightedUtxo],
+    eff_values: &'a mut [Amount],
     rng: &mut R,
-) -> Option<std::vec::IntoIter<&'a WeightedUtxo>> {
-    let mut result: Vec<_> = weighted_utxos.iter().collect();
-    let mut origin = result.to_owned();
-    origin.shuffle(rng);
-
-    result.clear();
+) -> Option<Vec<usize>> {
+    eff_values.shuffle(rng);
 
     let threshold = target + CHANGE_LOWER;
-    let mut value = Amount::ZERO;
 
-    for w_utxo in origin {
-        let utxo_value = w_utxo.utxo.value;
-        let effective_value = effective_value(fee_rate, w_utxo.satisfaction_weight, utxo_value)?;
+    let mut sum = Amount::ZERO;
+    let mut index_list = vec![];
 
-        value += match effective_value.to_unsigned() {
-            Ok(amt) => amt,
-            Err(_) => continue,
-        };
+    for (i, e) in eff_values.iter().enumerate() {
+        sum += *e;
+        index_list.push(i);
 
-        result.push(w_utxo);
-
-        if value >= threshold {
-            return Some(result.into_iter());
+        if sum >= threshold {
+            return Some(index_list);
         }
     }
 

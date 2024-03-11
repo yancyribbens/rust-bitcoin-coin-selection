@@ -83,16 +83,24 @@ pub fn select_coins<T: Utxo>(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    weighted_utxos: &[WeightedUtxo],
-) -> Option<impl Iterator<Item = &WeightedUtxo>> {
+    weighted_utxos: &mut [WeightedUtxo],
+) -> Result<usize, usize> {
     {
-        let bnb =
-            select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, weighted_utxos);
+        let mut eff_values: Vec<Amount> = weighted_utxos
+            .iter()
+            .filter_map(|u| u.effective_value(fee_rate))
+            .filter(|eff_val| eff_val.is_positive())
+            .map(|eff_val| eff_val.to_unsigned().unwrap())
+            .collect();
 
-        if bnb.is_some() {
-            bnb
-        } else {
-            select_coins_srd(target, fee_rate, weighted_utxos, &mut thread_rng())
+        let index_list = select_coins_srd(target, &mut eff_values, &mut thread_rng()).unwrap();
+
+        for (i, u) in weighted_utxos.iter().enumerate() {
+            if !index_list.contains(&i) {
+                weighted_utxos.to_vec().remove(i);
+            }
         }
+
+        Ok(0)
     }
 }
