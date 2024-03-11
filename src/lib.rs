@@ -53,22 +53,23 @@ pub struct WeightedUtxo {
     pub utxo: TxOut,
 }
 
-impl WeightedUtxo {
-    fn effective_value(&self, fee_rate: FeeRate) -> Option<SignedAmount> {
-        let signed_input_fee = self.calculate_fee(fee_rate)?.to_signed().ok()?;
-        self.utxo.value.to_signed().ok()?.checked_sub(signed_input_fee)
-    }
+/// TODO
+pub fn effective_value(fee_rate: FeeRate, satisfaction_weight: Weight, value: Amount) -> Option<SignedAmount> {
+    let signed_input_fee = calculate_fee(fee_rate, satisfaction_weight)?.to_signed().ok()?;
+    value.to_signed().ok()?.checked_sub(signed_input_fee)
+}
 
-    fn calculate_fee(&self, fee_rate: FeeRate) -> Option<Amount> {
-        let weight = self.satisfaction_weight.checked_add(TxIn::BASE_WEIGHT)?;
-        fee_rate.checked_mul_by_weight(weight)
-    }
+/// TODO
+pub fn calculate_fee(fee_rate: FeeRate, satisfaction_weight: Weight) -> Option<Amount> {
+    let weight = satisfaction_weight.checked_add(TxIn::BASE_WEIGHT)?;
+    fee_rate.checked_mul_by_weight(weight)
+}
 
-    fn waste(&self, fee_rate: FeeRate, long_term_fee_rate: FeeRate) -> Option<SignedAmount> {
-        let fee: SignedAmount = self.calculate_fee(fee_rate)?.to_signed().ok()?;
-        let lt_fee: SignedAmount = self.calculate_fee(long_term_fee_rate)?.to_signed().ok()?;
-        fee.checked_sub(lt_fee)
-    }
+/// TODO
+pub fn calculate_waste(fee_rate: FeeRate, long_term_fee_rate: FeeRate, satisfaction_weight: Weight) -> Option<SignedAmount> {
+    let fee: SignedAmount = calculate_fee(fee_rate, satisfaction_weight)?.to_signed().ok()?;
+    let lt_fee: SignedAmount = calculate_fee(long_term_fee_rate, satisfaction_weight)?.to_signed().ok()?;
+    fee.checked_sub(lt_fee)
 }
 
 /// Select coins first using BnB algorithm similar to what is done in bitcoin
@@ -83,17 +84,24 @@ pub fn select_coins<T: Utxo>(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    weighted_utxos: &mut [WeightedUtxo],
-) -> Result<usize, usize> {
+    weighted_utxos: &[WeightedUtxo]
+) -> Option<impl Iterator<Item = &WeightedUtxo>>
     {
         let mut eff_values: Vec<Amount> = weighted_utxos
             .iter()
-            .filter_map(|u| u.effective_value(fee_rate))
-            .filter(|eff_val| eff_val.is_positive())
-            .map(|eff_val| eff_val.to_unsigned().unwrap())
+            .filter_map(|w| effective_value(fee_rate, w.satisfaction_weight, w.utxo.value))
+            .filter(|e| e.is_positive())
+            .map(|e| e.to_unsigned().unwrap())
             .collect();
 
-        let index_list = select_coins_srd(target, &mut eff_values, &mut thread_rng()).unwrap();
+        let bnb =
+            select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, &mut eff_values, weighted_utxos);
+
+        let index_list = if bnb.is_none() {
+            select_coins_srd(target, &mut eff_values, &mut thread_rng()).unwrap()
+        } else {
+            bnb.unwrap()
+        };
 
         for (i, u) in weighted_utxos.iter().enumerate() {
             if !index_list.contains(&i) {
@@ -101,6 +109,5 @@ pub fn select_coins<T: Utxo>(
             }
         }
 
-        Ok(0)
+        Some(weighted_utxos.iter())
     }
-}

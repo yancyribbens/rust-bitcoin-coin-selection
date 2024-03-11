@@ -5,10 +5,16 @@
 //! This module introduces the Branch and Bound Coin Selection Algorithm.
 
 use crate::WeightedUtxo;
+use crate::calculate_waste;
+use crate::calculate_fee;
 use bitcoin::amount::CheckedSum;
 use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::SignedAmount;
+
+// Total_Tries in Core:
+// https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
+const ITERATION_LIMIT: i32 = 100_000;
 
 /// Select coins bnb performs a depth first branch and bound search.  The search traverses a
 /// binary tree with a maximum depth n where n is the size of the target UTXO pool.
@@ -147,12 +153,9 @@ pub fn select_coins_bnb(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
+    eff_values: &mut [Amount],
     weighted_utxos: &[WeightedUtxo],
-) -> Option<std::vec::IntoIter<&WeightedUtxo>> {
-    // Total_Tries in Core:
-    // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
-    const ITERATION_LIMIT: i32 = 100_000;
-
+) -> Option<Vec<usize>> {
     let mut iteration = 0;
     let mut index = 0;
     let mut backtrack;
@@ -167,33 +170,25 @@ pub fn select_coins_bnb(
 
     let upper_bound = target.checked_add(cost_of_change)?;
 
-    // Creates a tuple of (effective_value, waste, weighted_utxo)
-    let mut w_utxos: Vec<(Amount, SignedAmount, &WeightedUtxo)> = weighted_utxos
-        .iter()
-        // calculate effective_value and waste for each w_utxo.
-        .map(|wu| (wu.effective_value(fee_rate), wu.waste(fee_rate, long_term_fee_rate), wu))
-        // remove utxos that either had an error in the effective_value or waste calculation.
-        .filter(|(eff_val, waste, _)| eff_val.is_some() && waste.is_some())
-        // unwrap the option type since we know they are not None (see previous step).
-        .map(|(eff_val, waste, wu)| (eff_val.unwrap(), waste.unwrap(), wu))
-        // filter out all effective_values that are negative.
-        .filter(|(eff_val, _, _)| eff_val.is_positive())
-        // all utxo effective_values are now positive (see previous step) - cast to unsigned.
-        .map(|(eff_val, waste, wu)| (eff_val.to_unsigned().unwrap(), waste, wu))
-        .collect();
-
-    w_utxos.sort_by_key(|u| u.0);
-    w_utxos.reverse();
-
-    let mut available_value = w_utxos.clone().into_iter().map(|(ev, _, _)| ev).checked_sum()?;
+    let mut available_value = eff_values.to_vec().into_iter().checked_sum()?;
 
     if available_value < target {
         return None;
     }
 
+    let waste: Vec<SignedAmount> = weighted_utxos
+        .iter()
+        .map(|w| calculate_waste(fee_rate, long_term_fee_rate, w.satisfaction_weight).unwrap())
+        .collect();
+
+    let mut t: Vec<(Amount, SignedAmount)> = std::iter::zip(eff_values.to_vec(), waste).collect();
+
+    t.sort_by_key(|u| u.0);
+    t.reverse();
+
     while iteration < ITERATION_LIMIT {
         backtrack = false;
-
+ 
         // * If any of the conditions are met, backtrack.
         //
         // unchecked_add is used here for performance.  Before entering the search loop, all
@@ -242,7 +237,7 @@ pub fn select_coins_bnb(
         // * Backtrack
         if backtrack {
             if index_selection.is_empty() {
-                return index_to_utxo_list(best_selection, w_utxos);
+                return best_selection;
             }
 
             loop {
@@ -252,19 +247,19 @@ pub fn select_coins_bnb(
                     break;
                 }
 
-                let (eff_value, _, _) = w_utxos[index];
+                let (eff_value, _) = t[index];
                 available_value += eff_value;
             }
 
             assert_eq!(index, *index_selection.last().unwrap());
-            let (eff_value, utxo_waste, _) = w_utxos[index];
+            let (eff_value, utxo_waste) = t[index];
             current_waste = current_waste.checked_sub(utxo_waste)?;
             value = value.checked_sub(eff_value)?;
             index_selection.pop().unwrap();
         }
         // * Add next node to the inclusion branch.
         else {
-            let (eff_value, utxo_waste, _) = w_utxos[index];
+            let (eff_value, utxo_waste) = t[index];
             current_waste = current_waste.checked_add(utxo_waste)?;
 
             index_selection.push(index);
@@ -284,32 +279,8 @@ pub fn select_coins_bnb(
         iteration += 1;
     }
 
-    return index_to_utxo_list(best_selection, w_utxos);
-}
-
-// Copy the index list into a list such that for each
-// index, the corresponding w_utxo is copied.
-fn index_to_utxo_list(
-    index_list: Option<Vec<usize>>,
-    wu: Vec<(Amount, SignedAmount, &WeightedUtxo)>,
-) -> Option<std::vec::IntoIter<&WeightedUtxo>> {
-    // Doing this to satisfy the borrow checker such that the
-    // refs &WeightedUtxo in `wu` have the same lifetime as the
-    // returned &WeightedUtxo.
-    let origin: Vec<_> = wu.iter().map(|(_, _, u)| *u).collect();
-    let mut result = origin.clone();
-    result.clear();
-
-    // copy over the origin items into result that are present
-    // in the index_list.
-    if let Some(i_list) = index_list {
-        for i in i_list {
-            result.push(origin[i])
-        }
-        Some(result.into_iter())
-    } else {
-        None
-    }
+    best_selection = Some(vec![0]);
+    return best_selection;
 }
 
 #[cfg(test)]
