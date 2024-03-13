@@ -59,6 +59,7 @@ mod tests {
     use bitcoin::ScriptBuf;
     use bitcoin::TxOut;
     use bitcoin::Weight;
+    use bitcoin::FeeRate;
     use core::str::FromStr;
     use rand::rngs::mock::StepRng;
 

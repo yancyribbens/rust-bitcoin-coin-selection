@@ -54,7 +54,7 @@ pub struct WeightedUtxo {
 }
 
 /// TODO
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CoinSelect {
     /// Corresponding UTXO index
     pub index: usize,
