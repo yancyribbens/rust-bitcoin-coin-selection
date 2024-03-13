@@ -1,11 +1,8 @@
 //! This library provides efficient algorithms to compose a set of unspent transaction outputs
 //! (UTXOs).
 
-use crate::WeightedUtxo;
 use crate::CHANGE_LOWER;
-use bitcoin::blockdata::transaction::effective_value;
 use bitcoin::Amount;
-use bitcoin::FeeRate;
 use rand::seq::SliceRandom;
 
 /// Randomly select coins for the given target by shuffling the UTXO pool and

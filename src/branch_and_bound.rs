@@ -4,14 +4,13 @@
 //!
 //! This module introduces the Branch and Bound Coin Selection Algorithm.
 
-use crate::calculate_fee;
 use crate::calculate_waste;
-use crate::WeightedUtxo;
+use crate::CoinSelect;
 use bitcoin::amount::CheckedSum;
 use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::SignedAmount;
-use bitcoin::Weight;
+use std::iter::zip;
 
 // Total_Tries in Core:
 // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
@@ -151,11 +150,10 @@ const ITERATION_LIMIT: i32 = 100_000;
 // such a case, backtrack to start a new search path.
 pub fn select_coins_bnb(
     target: Amount,
+    coin_select: &[CoinSelect],
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    eff_values: &mut [Amount],
-    utxo_weights: &[Weight],
 ) -> Option<Vec<usize>> {
     let mut iteration = 0;
     let mut index = 0;
@@ -171,21 +169,21 @@ pub fn select_coins_bnb(
 
     let upper_bound = target.checked_add(cost_of_change)?;
 
-    let mut available_value = eff_values.to_vec().into_iter().checked_sum()?;
+    let mut available_value = coin_select.to_vec().into_iter().map(|c| c.effective_value).checked_sum()?;
 
     if available_value < target {
         return None;
     }
 
-    let waste: Vec<SignedAmount> = utxo_weights 
+    let waste: Vec<SignedAmount> = coin_select 
         .iter()
-        .map(|&w| calculate_waste(fee_rate, long_term_fee_rate, w).unwrap())
+        .map(|c| c.weight_prediction)
+        .map(|w| calculate_waste(fee_rate, long_term_fee_rate, w).unwrap())
         .collect();
 
-    let mut t: Vec<(Amount, SignedAmount)> = std::iter::zip(eff_values.to_vec(), waste).collect();
-
-    t.sort_by_key(|u| u.0);
-    t.reverse();
+    let mut candidate_set: Vec<_> = zip(coin_select, waste).collect();
+    candidate_set.sort_by_key(|(c, _)| c.effective_value);
+    candidate_set.reverse();
 
     while iteration < ITERATION_LIMIT {
         backtrack = false;
@@ -238,7 +236,15 @@ pub fn select_coins_bnb(
         // * Backtrack
         if backtrack {
             if index_selection.is_empty() {
-                return best_selection;
+                let mut r = vec![];
+                if let Some(b) = best_selection {  
+                    for i in b {
+                        r.push(coin_select[i].index)
+                    }
+                    return Some(r);
+                } else {
+                    return None;
+                }
             }
 
             loop {
@@ -248,31 +254,31 @@ pub fn select_coins_bnb(
                     break;
                 }
 
-                let (eff_value, _) = t[index];
-                available_value += eff_value;
+                let (coin_select, _) = candidate_set[index];
+                available_value += coin_select.effective_value;
             }
 
             assert_eq!(index, *index_selection.last().unwrap());
-            let (eff_value, utxo_waste) = t[index];
+            let (coin_select, utxo_waste) = candidate_set[index];
             current_waste = current_waste.checked_sub(utxo_waste)?;
-            value = value.checked_sub(eff_value)?;
+            value = value.checked_sub(coin_select.effective_value)?;
             index_selection.pop().unwrap();
         }
         // * Add next node to the inclusion branch.
         else {
-            let (eff_value, utxo_waste) = t[index];
+            let (coin_select, utxo_waste) = candidate_set[index];
             current_waste = current_waste.checked_add(utxo_waste)?;
 
             index_selection.push(index);
 
             // unchecked add is used here for performance.  Since the sum of all utxo values
             // did not overflow, then any positive subset of the sum will not overflow.
-            value = value.unchecked_add(eff_value);
+            value = value.unchecked_add(coin_select.effective_value);
 
             // unchecked sub is used her for performance.
             // The bounds for available_value are at most the sum of utxos
             // and at least zero.
-            available_value = available_value.unchecked_sub(eff_value);
+            available_value = available_value.unchecked_sub(coin_select.effective_value);
         }
 
         // no overflow is possible since the iteration count is bounded.
@@ -280,8 +286,15 @@ pub fn select_coins_bnb(
         iteration += 1;
     }
 
-    best_selection = Some(vec![0]);
-    return best_selection;
+    let mut r = vec![];
+    if let Some(b) = best_selection {  
+        for i in b {
+            r.push(coin_select[i].index)
+        }
+        return Some(r);
+    } else {
+        return None;
+    }
 }
 
 #[cfg(test)]

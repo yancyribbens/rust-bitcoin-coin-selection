@@ -54,6 +54,17 @@ pub struct WeightedUtxo {
 }
 
 /// TODO
+#[derive(Clone)]
+pub struct CoinSelect {
+    /// Corresponding UTXO index
+    pub index: usize,
+    /// Calculated effective value
+    pub effective_value: Amount,
+    /// The predicted weight
+    pub weight_prediction: Weight,
+}
+
+/// TODO
 pub fn effective_value(
     fee_rate: FeeRate,
     satisfaction_weight: Weight,
@@ -95,31 +106,34 @@ pub fn select_coins<T: Utxo>(
     long_term_fee_rate: FeeRate,
     weighted_utxos: &[WeightedUtxo],
 ) -> Option<impl Iterator<Item = &WeightedUtxo>> {
-    let mut eff_values: Vec<Amount> = weighted_utxos
-        .iter()
-        .filter_map(|w| effective_value(fee_rate, w.satisfaction_weight, w.utxo.value))
-        .filter(|e| e.is_positive())
-        .map(|e| e.to_unsigned().unwrap())
-        .collect();
 
-    let weights: Vec<Weight> = weighted_utxos.iter().map(|w| w.satisfaction_weight).collect();
+    let coin_select: Vec<CoinSelect> = weighted_utxos
+        .iter()
+        .enumerate()
+        .map(|(i, u)| (i, effective_value(fee_rate, u.satisfaction_weight, u.utxo.value), u.satisfaction_weight))
+        .filter(|(_, e, _)| e.is_some())
+        .map(|(i, e, w)| (i, e.unwrap(), w))
+        .filter(|(_, e, _)| e.is_positive())
+        .map(|(i, e, w)| (i, e.to_unsigned().unwrap(), w))
+        .map(|(i, e, w)| CoinSelect { index: i, effective_value: e, weight_prediction: w })
+        .collect();
 
     let bnb = select_coins_bnb(
         target,
+        &coin_select,
         cost_of_change,
         fee_rate,
         long_term_fee_rate,
-        &mut eff_values,
-        &weights,
     );
 
     let index_list = if bnb.is_none() {
+        let mut eff_values: Vec<_> = coin_select.iter().map(|c| c.effective_value).collect();
         select_coins_srd(target, &mut eff_values, &mut thread_rng()).unwrap()
     } else {
         bnb.unwrap()
     };
 
-    for (i, u) in weighted_utxos.iter().enumerate() {
+    for (i, _) in weighted_utxos.iter().enumerate() {
         if !index_list.contains(&i) {
             weighted_utxos.to_vec().remove(i);
         }
