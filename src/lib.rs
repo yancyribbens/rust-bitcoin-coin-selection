@@ -83,16 +83,9 @@ pub fn select_coins<T: Utxo>(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    weighted_utxos: &[WeightedUtxo],
-) -> Option<impl Iterator<Item = &WeightedUtxo>> {
+    weighted_utxos: &mut Vec<WeightedUtxo>,
+) -> Option<usize> {
     {
-        let bnb =
-            select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, weighted_utxos);
-
-        if bnb.is_some() {
-            bnb
-        } else {
-            select_coins_srd(target, fee_rate, weighted_utxos, &mut thread_rng())
-        }
+        select_coins_srd(target, fee_rate, weighted_utxos, &mut thread_rng())
     }
 }
