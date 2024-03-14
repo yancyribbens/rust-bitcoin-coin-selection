@@ -10,6 +10,10 @@ use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::SignedAmount;
 
+// Total_Tries in Core:
+// https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
+const ITERATION_LIMIT: i32 = 100_000;
+
 /// Select coins bnb performs a depth first branch and bound search.  The search traverses a
 /// binary tree with a maximum depth n where n is the size of the target UTXO pool.
 ///
@@ -149,10 +153,6 @@ pub fn select_coins_bnb(
     long_term_fee_rate: FeeRate,
     weighted_utxos: &[WeightedUtxo],
 ) -> Option<std::vec::IntoIter<&WeightedUtxo>> {
-    // Total_Tries in Core:
-    // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
-    const ITERATION_LIMIT: i32 = 100_000;
-
     let mut iteration = 0;
     let mut index = 0;
     let mut backtrack;
