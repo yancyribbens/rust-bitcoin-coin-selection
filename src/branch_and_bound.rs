@@ -151,8 +151,10 @@ pub fn select_coins_bnb(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    coin_select: &mut [CoinSelect]
+    coin_select: &[CoinSelect]
 ) -> Option<std::vec::IntoIter<&CoinSelect>> {
+    let mut origin: Vec<_> = coin_select.to_vec();
+
     let mut iteration = 0;
     let mut index = 0;
     let mut backtrack;
@@ -166,8 +168,8 @@ pub fn select_coins_bnb(
     let mut best_selection: Option<Vec<usize>> = None;
 
     let upper_bound = target.checked_add(cost_of_change)?;
-    coin_select.sort_by_key(|u| u.effective_value);
-    coin_select.reverse();
+    origin.sort_by_key(|u| u.effective_value);
+    origin.reverse();
 
     let mut available_value = coin_select.into_iter().map(|c| c.effective_value).checked_sum()?;
 
@@ -175,6 +177,7 @@ pub fn select_coins_bnb(
         return None;
     }
 
+    let mut result = vec![];
     while iteration < ITERATION_LIMIT {
         backtrack = false;
 
@@ -212,16 +215,12 @@ pub fn select_coins_bnb(
             let v = value.to_signed().ok()?;
             let t = target.to_signed().ok()?;
 
-            println!("value: {} target: {}", v, t);
             let waste: SignedAmount = v.checked_sub(t)?;
             current_waste = current_waste.checked_add(waste)?;
-            println!("the current waste: {}", current_waste);
-            println!("the best waste: {}", best_waste);
 
             // Check if index_selection is better than the previous known best, and
             // update best_selection accordingly.
             if current_waste <= best_waste {
-                println!("set new selection: {:?}", index_selection);
                 best_selection = Some(index_selection.clone());
                 best_waste = current_waste;
             }
@@ -231,9 +230,7 @@ pub fn select_coins_bnb(
         // * Backtrack
         if backtrack {
             if index_selection.is_empty() {
-                println!("done!");
                 // TODO refactor
-                let mut result = vec![];
                 if let Some(i_list) = best_selection {
                     for i in i_list {
                         result.push(&coin_select[i])
@@ -267,7 +264,6 @@ pub fn select_coins_bnb(
             // unchecked add is used here for performance.  Since the sum of all utxo values
             // did not overflow, then any positive subset of the sum will not overflow.
             value = value.unchecked_add(coin_select[index].effective_value);
-            println!("{}", value);
 
             // unchecked sub is used her for performance.
             // The bounds for available_value are at most the sum of utxos
@@ -280,10 +276,7 @@ pub fn select_coins_bnb(
         iteration += 1;
     }
 
-    println!("done!");
-
     // TODO refactor
-    let mut result = vec![];
     if let Some(i_list) = best_selection {
         for i in i_list {
             result.push(&coin_select[i])
@@ -374,17 +367,16 @@ mod tests {
 
     #[test]
     fn select_coins_bnb_one() {
-        //let target = Amount::from_str("1 cBTC").unwrap();
-        //let coin = create_coin();
+        let target = Amount::from_str("1 cBTC").unwrap();
+        let coin = create_coin();
 
-        //let list: Vec<_> =
-            //select_coins_bnb(target, Amount::ZERO, FeeRate::ZERO, FeeRate::ZERO, &coin)
-                //.unwrap()
-                //.collect();
+        let list: Vec<_> =
+            select_coins_bnb(target, Amount::ZERO, FeeRate::ZERO, FeeRate::ZERO, &coin)
+                .unwrap()
+                .collect();
 
-        //assert_eq!(list.len(), 1);
-        //println!("result: {:?}", list);
-        //assert_eq!(list[0].utxo.value, Amount::from_str("1 cBTC").unwrap());
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].utxo.value, Amount::from_str("1 cBTC").unwrap());
     }
 
     #[test]

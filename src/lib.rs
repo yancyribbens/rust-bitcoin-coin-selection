@@ -61,17 +61,15 @@ pub fn select_coins<T: Utxo>(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    coin_select: &mut [CoinSelect]
-) -> Option<usize> {
+    coin_select: &[CoinSelect]
+) -> Option<std::vec::IntoIter<&CoinSelect>> {
     {
-        let origin = coin_select.to_vec().clone();
-
-        let r = select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, coin_select);
-
-        if coin_select.is_empty() {
-            let r = select_coins_srd(target, &origin, &mut thread_rng());
-        };
-
-        None
+        let bnb =
+            select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, coin_select);
+        if bnb.is_some() {
+            bnb
+        } else {
+            select_coins_srd(target, coin_select, &mut thread_rng())
+        }
     }
 }

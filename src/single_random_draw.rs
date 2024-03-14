@@ -31,11 +31,10 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     coin_select: &'a [CoinSelect],
     rng: &mut R,
 ) -> Option<std::vec::IntoIter<&'a CoinSelect>> {
-    let mut result: Vec<_> = coin_select.iter().collect();
-    let mut origin = result.to_owned();
+    let mut origin: Vec<_> = coin_select.iter().collect();
     origin.shuffle(rng);
 
-    result.clear();
+    let mut result = vec![];
 
     // Avoid making needlessly small change amounts.
     // The amount should be larger than the target by a reasonable amount.
