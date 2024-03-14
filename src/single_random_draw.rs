@@ -62,8 +62,8 @@ mod tests {
     use crate::single_random_draw::select_coins_srd;
     use crate::CoinSelect;
     use bitcoin::Amount;
-    use bitcoin::SignedAmount;
     use bitcoin::ScriptBuf;
+    use bitcoin::SignedAmount;
     use bitcoin::TxOut;
     use core::str::FromStr;
     use rand::rngs::mock::StepRng;
@@ -75,7 +75,7 @@ mod tests {
                 value: Amount::from_str("1 cBTC").unwrap(), // TODO calculate eff_value
                 script_pubkey: ScriptBuf::new(),
             },
-            waste: SignedAmount::ZERO 
+            waste: SignedAmount::ZERO,
         };
 
         let coin_two = CoinSelect {
@@ -84,7 +84,7 @@ mod tests {
                 value: Amount::from_str("2 cBTC").unwrap(), // TODO calculate eff_value
                 script_pubkey: ScriptBuf::new(),
             },
-            waste: SignedAmount::ZERO 
+            waste: SignedAmount::ZERO,
         };
 
         vec![coin_one, coin_two]
@@ -110,9 +110,7 @@ mod tests {
         let coin: Vec<CoinSelect> = create_coin();
 
         let result: Vec<&CoinSelect> =
-            select_coins_srd(target, &coin, &mut get_rng())
-                .expect("unexpected error")
-                .collect();
+            select_coins_srd(target, &coin, &mut get_rng()).expect("unexpected error").collect();
 
         let expected_result = Amount::from_str("2 cBTC").unwrap();
         assert_eq!(result.len(), 1);
@@ -134,9 +132,7 @@ mod tests {
         let coin: Vec<CoinSelect> = create_coin();
 
         let result: Vec<&CoinSelect> =
-            select_coins_srd(target, &coin, &mut get_rng())
-                .expect("unexpected error")
-                .collect();
+            select_coins_srd(target, &coin, &mut get_rng()).expect("unexpected error").collect();
 
         let expected_second_element = Amount::from_str("1 cBTC").unwrap();
         let expected_first_element = Amount::from_str("2 cBTC").unwrap();
@@ -148,11 +144,11 @@ mod tests {
 
     //#[test]
     //fn select_coins_srd_fee_rate_error() {
-        //let target: Amount = Amount::from_str("2 cBTC").unwrap();
-        //let weighted_utxos: Vec<WeightedUtxo> = create_weighted_utxos();
+    //let target: Amount = Amount::from_str("2 cBTC").unwrap();
+    //let weighted_utxos: Vec<WeightedUtxo> = create_weighted_utxos();
 
-        //let result = select_coins_srd(target, FeeRate::MAX, &weighted_utxos, &mut get_rng());
-        //assert!(result.is_none());
+    //let result = select_coins_srd(target, FeeRate::MAX, &weighted_utxos, &mut get_rng());
+    //assert!(result.is_none());
     //}
 
     #[test]
@@ -169,40 +165,40 @@ mod tests {
 
     //#[test]
     //fn select_coins_srd_with_high_fee() {
-        // the first UTXO is 2 cBTC.  If the fee is greater than 10 sats,
-        // then more than the single 2 cBTC output will need to be selected
-        // if the target is 1.99999 cBTC.  That is, 2 cBTC - 1.9999 cBTC = 10 sats.
-        //let target: Amount = Amount::from_str("1.99999 cBTC").unwrap();
+    // the first UTXO is 2 cBTC.  If the fee is greater than 10 sats,
+    // then more than the single 2 cBTC output will need to be selected
+    // if the target is 1.99999 cBTC.  That is, 2 cBTC - 1.9999 cBTC = 10 sats.
+    //let target: Amount = Amount::from_str("1.99999 cBTC").unwrap();
 
-        // fee = 15 sats, since
-        // 40 sat/kwu * (204 + BASE_WEIGHT) = 15 sats
-        //let fee_rate: FeeRate = FeeRate::from_sat_per_kwu(40);
-        //let weighted_utxos: Vec<WeightedUtxo> = create_weighted_utxos();
+    // fee = 15 sats, since
+    // 40 sat/kwu * (204 + BASE_WEIGHT) = 15 sats
+    //let fee_rate: FeeRate = FeeRate::from_sat_per_kwu(40);
+    //let weighted_utxos: Vec<WeightedUtxo> = create_weighted_utxos();
 
-        //let result: Vec<_> = select_coins_srd(target, fee_rate, &weighted_utxos, &mut get_rng())
-            //.expect("unexpected error")
-            //.collect();
-        //let expected_second_element = Amount::from_str("1 cBTC").unwrap();
-        //let expected_first_element = Amount::from_str("2 cBTC").unwrap();
+    //let result: Vec<_> = select_coins_srd(target, fee_rate, &weighted_utxos, &mut get_rng())
+    //.expect("unexpected error")
+    //.collect();
+    //let expected_second_element = Amount::from_str("1 cBTC").unwrap();
+    //let expected_first_element = Amount::from_str("2 cBTC").unwrap();
 
-        //assert_eq!(result.len(), 2);
-        //assert_eq!(result[0].utxo.value, expected_first_element);
-        //assert_eq!(result[1].utxo.value, expected_second_element);
+    //assert_eq!(result.len(), 2);
+    //assert_eq!(result[0].utxo.value, expected_first_element);
+    //assert_eq!(result[1].utxo.value, expected_second_element);
     //}
 
     //#[test]
     //fn select_coins_srd_addition_overflow() {
-        //let target: Amount = Amount::from_str("2 cBTC").unwrap();
+    //let target: Amount = Amount::from_str("2 cBTC").unwrap();
 
-        //let weighted_utxos: Vec<WeightedUtxo> = vec![WeightedUtxo {
-            //satisfaction_weight: Weight::MAX,
-            //utxo: TxOut {
-                //value: Amount::from_str("1 cBTC").unwrap(),
-                //script_pubkey: ScriptBuf::new(),
-            //},
-        //}];
+    //let weighted_utxos: Vec<WeightedUtxo> = vec![WeightedUtxo {
+    //satisfaction_weight: Weight::MAX,
+    //utxo: TxOut {
+    //value: Amount::from_str("1 cBTC").unwrap(),
+    //script_pubkey: ScriptBuf::new(),
+    //},
+    //}];
 
-        //let result = select_coins_srd(target, FEE_RATE, &weighted_utxos, &mut get_rng());
-        //assert!(result.is_none());
+    //let result = select_coins_srd(target, FEE_RATE, &weighted_utxos, &mut get_rng());
+    //assert!(result.is_none());
     //}
 }

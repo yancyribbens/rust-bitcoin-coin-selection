@@ -43,7 +43,7 @@ pub struct CoinSelect {
     /// TODO
     pub effective_value: Amount,
     /// TODO
-    pub waste: SignedAmount 
+    pub waste: SignedAmount,
 }
 
 // https://github.com/bitcoin/bitcoin/blob/f722a9bd132222d9d5cd503b5af25c905b205cdb/src/wallet/coinselection.h#L20
@@ -61,7 +61,7 @@ pub fn select_coins<T: Utxo>(
     cost_of_change: Amount,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    coin_select: &[CoinSelect]
+    coin_select: &[CoinSelect],
 ) -> Option<std::vec::IntoIter<&CoinSelect>> {
     {
         let bnb =
