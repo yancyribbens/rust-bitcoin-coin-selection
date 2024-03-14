@@ -33,12 +33,10 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     fee_rate: FeeRate,
     weighted_utxos: &'a [WeightedUtxo],
     rng: &mut R,
-) -> Option<std::vec::IntoIter<&'a WeightedUtxo>> {
-    let mut result: Vec<_> = weighted_utxos.iter().collect();
-    let mut origin = result.to_owned();
+) -> Option<Amount> {
+    let mut result = vec![];
+    let mut origin: Vec<_> = weighted_utxos.iter().collect();
     origin.shuffle(rng);
-
-    result.clear();
 
     let threshold = target + CHANGE_LOWER;
     let mut value = Amount::ZERO;
@@ -55,7 +53,8 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
         result.push(w_utxo);
 
         if value >= threshold {
-            return Some(result.into_iter());
+
+            return Some(value);
         }
     }
 
