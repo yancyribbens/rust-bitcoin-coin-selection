@@ -35,7 +35,7 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     rng: &mut R,
 ) -> Option<usize> {
     let mut result: Vec<WeightedUtxo> = vec![];
-    let mut iterations: usize = 0;
+    let mut iteration: usize = 0;
 
     let mut origin = weighted_utxos.clone();
 
@@ -58,13 +58,13 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
 
         if value >= threshold {
             *weighted_utxos = result.clone();
-            return Some(iterations);
+            return Some(iteration);
         }
 
-        iterations += 1;
+        iteration += 1;
     }
 
-    Some(iterations)
+    Some(iteration)
 }
 
 #[cfg(test)]
