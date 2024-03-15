@@ -162,8 +162,8 @@ pub fn select_coins_bnb(
     let mut current_waste: SignedAmount = SignedAmount::ZERO;
     let mut best_waste = SignedAmount::MAX_MONEY;
 
-    let mut index_selection: Vec<usize> = vec![];
-    let mut best_selection: Option<Vec<usize>> = None;
+    let mut index_selection: Vec<(usize, &WeightedUtxo)> = vec![];
+    let mut best_selection: Option<Vec<(usize, &WeightedUtxo)>> = None;
 
     let upper_bound = target.checked_add(cost_of_change)?;
 
@@ -242,13 +242,18 @@ pub fn select_coins_bnb(
         // * Backtrack
         if backtrack {
             if index_selection.is_empty() {
-                return index_to_utxo_list(best_selection, w_utxos);
+                if let Some(x) = best_selection {
+                    return Some(x.into_iter().map(|(_, w)| w).collect::<Vec<_>>().into_iter())
+                } else {
+                    return None
+                }
             }
 
             loop {
                 index -= 1;
 
-                if index <= *index_selection.last().unwrap() {
+                let (i, _) = index_selection.last().unwrap();
+                if index <= *i {
                     break;
                 }
 
@@ -256,7 +261,9 @@ pub fn select_coins_bnb(
                 available_value += eff_value;
             }
 
-            assert_eq!(index, *index_selection.last().unwrap());
+            let (i, _) = index_selection.last().unwrap();
+            assert_eq!(index, *i);
+
             let (eff_value, utxo_waste, _) = w_utxos[index];
             current_waste = current_waste.checked_sub(utxo_waste)?;
             value = value.checked_sub(eff_value)?;
@@ -264,10 +271,10 @@ pub fn select_coins_bnb(
         }
         // * Add next node to the inclusion branch.
         else {
-            let (eff_value, utxo_waste, _) = w_utxos[index];
+            let (eff_value, utxo_waste, w_utxo) = w_utxos[index];
             current_waste = current_waste.checked_add(utxo_waste)?;
 
-            index_selection.push(index);
+            index_selection.push((index, w_utxo));
 
             // unchecked add is used here for performance.  Since the sum of all utxo values
             // did not overflow, then any positive subset of the sum will not overflow.
@@ -284,31 +291,10 @@ pub fn select_coins_bnb(
         iteration += 1;
     }
 
-    return index_to_utxo_list(best_selection, w_utxos);
-}
-
-// Copy the index list into a list such that for each
-// index, the corresponding w_utxo is copied.
-fn index_to_utxo_list(
-    index_list: Option<Vec<usize>>,
-    wu: Vec<(Amount, SignedAmount, &WeightedUtxo)>,
-) -> Option<std::vec::IntoIter<&WeightedUtxo>> {
-    // Doing this to satisfy the borrow checker such that the
-    // refs &WeightedUtxo in `wu` have the same lifetime as the
-    // returned &WeightedUtxo.
-    let origin: Vec<_> = wu.iter().map(|(_, _, u)| *u).collect();
-    let mut result = origin.clone();
-    result.clear();
-
-    // copy over the origin items into result that are present
-    // in the index_list.
-    if let Some(i_list) = index_list {
-        for i in i_list {
-            result.push(origin[i])
-        }
-        Some(result.into_iter())
+    if let Some(x) = best_selection {
+        return Some(x.into_iter().map(|(_, w)| w).collect::<Vec<_>>().into_iter())
     } else {
-        None
+        return None
     }
 }
 
