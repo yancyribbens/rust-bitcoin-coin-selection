@@ -35,10 +35,9 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     rng: &mut R,
 ) -> Option<usize> {
     let mut result: Vec<WeightedUtxo> = vec![];
-    let mut origin: Vec<WeightedUtxo> = vec![];
     let mut iterations: usize = 0;
 
-    origin = weighted_utxos.clone();
+    let mut origin = weighted_utxos.clone();
 
     origin.shuffle(rng);
     weighted_utxos.clear();
