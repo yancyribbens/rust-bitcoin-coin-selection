@@ -244,7 +244,7 @@ pub fn select_coins_bnb(
         if backtrack {
             if index_selection.is_empty() {
                 //TODO remove unwrap()
-                *weighted_utxos = best_selection.unwrap().into_iter().map(|(i, w)| w.clone()).collect();
+                *weighted_utxos = best_selection.unwrap().into_iter().map(|(_, w)| w.clone()).collect();
                 return Some(iteration);
             }
 
@@ -291,7 +291,7 @@ pub fn select_coins_bnb(
     }
 
     // TODO remove unwrap()
-    *weighted_utxos = best_selection.unwrap().into_iter().map(|(i, w)| w.clone()).collect();
+    *weighted_utxos = best_selection.unwrap().into_iter().map(|(_, w)| w.clone()).collect();
     return Some(iteration);
 }
 
