@@ -85,8 +85,13 @@ pub fn select_coins<T: Utxo>(
     long_term_fee_rate: FeeRate,
     weighted_utxos: &mut [WeightedUtxo],
 ) -> Option<usize> {
-    let bnb =
-        select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, &mut weighted_utxos.to_vec());
+    let bnb = select_coins_bnb(
+        target,
+        cost_of_change,
+        fee_rate,
+        long_term_fee_rate,
+        &mut weighted_utxos.to_vec(),
+    );
 
     if bnb.is_some() {
         bnb

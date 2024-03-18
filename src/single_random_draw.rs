@@ -31,7 +31,7 @@ use rand::seq::SliceRandom;
 pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     target: Amount,
     fee_rate: FeeRate,
-    weighted_utxos: &'a mut Vec<WeightedUtxo>,
+    weighted_utxos: &'a mut Vec<WeightedUtxo>, //TODO change to &mut [WeightedUtxo]
     rng: &mut R,
 ) -> Option<usize> {
     let mut result: Vec<WeightedUtxo> = vec![];
@@ -199,7 +199,7 @@ mod tests {
         let result = select_coins_srd(target, FEE_RATE, &mut weighted_utxos, &mut get_rng());
         assert_eq!(weighted_utxos.len(), 0);
         assert_eq!(result.unwrap(), 2);
-     }
+    }
 
     #[test]
     fn select_coins_srd_with_high_fee() {
