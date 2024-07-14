@@ -3,11 +3,10 @@ use bitcoin_coin_selection::WeightedUtxo;
 use honggfuzz::fuzz;
 use arbitrary::Arbitrary;
 
+use rand::thread_rng;
+
 use bitcoin::FeeRate;
 use bitcoin::Amount;
-//use bitcoin::ScriptBuf;
-//use bitcoin::TxOut;
-//use bitcoin::Weight;
 
 #[derive(Arbitrary, Debug)]
 pub struct Params {
@@ -20,8 +19,7 @@ fn main() {
     loop {
         fuzz!(|params: Params| {
             let Params { target: t, fee_rate: f, weighted_utxos: wu } = params;
-
-            println!("fuzz");
+            select_coins_srd(t, f, &wu, &mut thread_rng());
         });
     }
 }
