@@ -9,3 +9,11 @@ bitcoin-coin-selection = { path= "../bitcoin-coin-selection", features=["rand"] 
 rand = "0.8.5"
 bitcoin = { git = "https://github.com/yancyribbens/rust-bitcoin.git", rev = "edcd2fb5d78be71a60709d18fb367fd56171ff26" }
 arbitrary = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "single_random_draw_selection"
+path = "fuzz_targets/single_random_draw_selection.rs"
+
+[[bin]]
+name = "branch_and_bound_selection"
+path = "fuzz_targets/branch_and_bound_selection.rs"
