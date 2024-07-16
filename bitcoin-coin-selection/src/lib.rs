@@ -39,7 +39,7 @@ pub trait WeightedUtxo {
     fn satisfaction_weight(&self) -> Weight;
 
     /// TODO
-    fn utxo(&self) -> TxOut;
+    fn value(&self) -> Amount;
     //fn effective_value(&self, fee_rate: FeeRate) -> Option<SignedAmount>;
     //fn calculate_fee(&self, fee_rate: FeeRate) -> Option<Amount>;
     //fn waste(&self, fee_rate: FeeRate, long_term_fee_rate: FeeRate) -> Option<SignedAmount> 
@@ -47,7 +47,7 @@ pub trait WeightedUtxo {
     /// TODO
     fn effective_value(&self, fee_rate: FeeRate) -> Option<SignedAmount> {
         let signed_input_fee = self.calculate_fee(fee_rate)?.to_signed().ok()?;
-        self.utxo().value.to_signed().ok()?.checked_sub(signed_input_fee)
+        self.value().to_signed().ok()?.checked_sub(signed_input_fee)
     }
 
     /// TODO
