@@ -15,7 +15,6 @@ readme = "README.md"
 
 [dependencies]
 bitcoin = { git = "https://github.com/yancyribbens/rust-bitcoin.git", rev = "edcd2fb5d78be71a60709d18fb367fd56171ff26" }
-arbitrary = { version = "1", features = ["derive"] }
 rand = {version = "0.8.5", default-features = false, optional = true}
 
 [dev-dependencies]
