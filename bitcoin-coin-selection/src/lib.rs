@@ -12,13 +12,13 @@
 // Experimental features we need.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//mod branch_and_bound;
+mod branch_and_bound;
 mod single_random_draw;
 
-use bitcoin::{Amount, FeeRate, SignedAmount, TxOut, Weight};
+use bitcoin::{Amount, FeeRate, SignedAmount, Weight};
 use rand::thread_rng;
 
-//pub use crate::branch_and_bound::select_coins_bnb;
+pub use crate::branch_and_bound::select_coins_bnb;
 pub use crate::single_random_draw::select_coins_srd;
 
 // https://github.com/bitcoin/bitcoin/blob/f722a9bd132222d9d5cd503b5af25c905b205cdb/src/wallet/coinselection.h#L20
@@ -94,14 +94,12 @@ pub fn select_coins<Utxo: WeightedUtxo>(
     long_term_fee_rate: FeeRate,
     utxos: &[Utxo],
 ) -> Option<impl Iterator<Item = &Utxo>> {
-    //let bnb =
-        //select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, utxos);
+    let bnb =
+        select_coins_bnb(target, cost_of_change, fee_rate, long_term_fee_rate, utxos);
 
-    //if bnb.is_some() {
-        //bnb
-    //} else {
-        //select_coins_srd(target, fee_rate, weighted_utxos, &mut thread_rng())
-    //}
-
-    select_coins_srd(target, fee_rate, utxos, &mut thread_rng())
+    if bnb.is_some() {
+        bnb
+    } else {
+        select_coins_srd(target, fee_rate, utxos, &mut thread_rng())
+    }
 }

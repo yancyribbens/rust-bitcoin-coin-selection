@@ -2,7 +2,7 @@
 authors = [
   "Yancy Ribbens <email@yancy.lol>",
 ]
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/rust-bitcoin/rust-bitcoin-coin-selection/"
 license = "CC0-1.0"
 name = "bitcoin-coin-selection"
