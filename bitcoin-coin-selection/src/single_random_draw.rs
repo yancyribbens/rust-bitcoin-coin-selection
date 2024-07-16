@@ -27,18 +27,18 @@ use crate::{WeightedUtxo, CHANGE_LOWER};
 /// /// * `fee_rate` - ratio of transaction amount per size.
 /// /// * `weighted_utxos` - Weighted UTXOs from which to sum the target amount.
 /// /// * `rng` - used primarily by tests to make the selection deterministic.
-pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
+pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
     target: Amount,
     fee_rate: FeeRate,
-    weighted_utxos: &'a [WeightedUtxo],
+    utxos: &'a [Utxo],
     rng: &mut R,
-) -> Option<std::vec::IntoIter<&'a WeightedUtxo>> {
+) -> Option<std::vec::IntoIter<&'a Utxo>> {
 
     if target > Amount::MAX_MONEY {
         return None
     }
 
-    let mut result: Vec<_> = weighted_utxos.iter().collect();
+    let mut result: Vec<_> = utxos.iter().collect();
     let mut origin = result.to_owned();
     origin.shuffle(rng);
 
@@ -48,8 +48,8 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized>(
     let mut value = Amount::ZERO;
 
     for w_utxo in origin {
-        let utxo_value = w_utxo.utxo.value;
-        let effective_value = effective_value(fee_rate, w_utxo.satisfaction_weight, utxo_value)?;
+        let utxo_value = w_utxo.utxo().value;
+        let effective_value = effective_value(fee_rate, w_utxo.satisfaction_weight(), utxo_value)?;
 
         value += match effective_value.to_unsigned() {
             Ok(amt) => amt,
