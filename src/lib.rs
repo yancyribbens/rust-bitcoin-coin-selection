@@ -14,6 +14,7 @@
 
 mod branch_and_bound;
 mod single_random_draw;
+mod coin_grinder;
 
 use bitcoin::{Amount, FeeRate, SignedAmount, Weight};
 use rand::thread_rng;
