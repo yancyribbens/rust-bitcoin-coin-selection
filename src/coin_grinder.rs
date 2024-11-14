@@ -49,7 +49,7 @@ use bitcoin::amount::CheckedSum;
 
 //Simulations for my thesis on coin selection (see Section 6.3.2.1 [PDF]) suggest that minimizing the input set for all transactions tends to grind a wallet’s UTXO pool to dust (pun intended): an approach selecting inputs per coin-age-priority (in effect similar to “largest first selection”) on average produced a UTXO pool with 15× the UTXO count as Bitcoin Core’s Knapsack-based Coin Selection then (in 2016). Therefore, I do not recommend running CoinGrinder under all circumstances, but only at extreme feerates or when we have another good reason to minimize the input set for other reasons. In the long-term, we should introduce additional metrics to score different input set candidates, e.g. on basis of their privacy and wallet health impact, to pick from all our coin selection results, but until then, we may want to limit use of CoinGrinder in other ways.
 
-
+use bitcoin::transaction::effective_value;
 pub fn coin_grinder<Utxo: WeightedUtxo>(
     target: Amount,
     change_target: Amount,
@@ -57,12 +57,6 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     fee_rate: FeeRate,
     weighted_utxos: &[Utxo],
 ) -> Option<std::vec::IntoIter<&Utxo>> {
-
-    //println!("weighted_utxos len: {}", weighted_utxos.len());
-
-    //for wu in weighted_utxos {
-        //println!("value {:?}", wu.value());
-    //}
 
     // Creates a tuple of (effective_value, weighted_utxo)
     let mut w_utxos: Vec<(Amount, &Utxo)> = weighted_utxos
@@ -88,18 +82,10 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     });
 
     let lookahead = w_utxos.clone();
-    //lookahead.reverse();
-
-    for (e, w) in &lookahead {
-        println!("{:?}", e);
-    }
-
     let lookahead: Vec<Amount> = lookahead.iter().map(|(e, w)| e).scan(available_value, |state, &u| {
         *state = *state - u;
         Some(*state)
     }).collect();
-
-    println!("{:?}", lookahead);
 
     None
 }
@@ -116,7 +102,8 @@ mod tests {
         // Insufficient funds, select all provided coins and fail
         let target = Amount::from_str("1 cBTC").unwrap();
         let max_weight = Weight::from_wu(10_000);
-        let change_target = Amount::from_str("10_000 sats").unwrap();
+        let change_target = Amount::from_str("100 uBTC").unwrap(); //10k sats
+        println!("chage_target {:?}", change_target.to_sat());
         let fee_rate = FeeRate::ZERO;
 
         let mut pool = Vec::new();
@@ -132,24 +119,37 @@ mod tests {
 
     #[test]
     fn coin_grinder_solution_with_mixed_weights() {
-        // Test finding a solution in a UTXO pool with mixed weights
-        let target = Amount::from_str("30 cBTC").unwrap();
+        // This test case mirrors that of Bitcoin Cores:
+        // https://github.com/bitcoin/bitcoin/blob/8d340be92470f3fd37f2ef4e709d1040bb2a84cf/src/wallet/test/coinselector_tests.cpp#L1213
+        //
+        // A note on converstion.  In Bitcoin core, the fee_rate is 5,000k while in rust-bitcoin,
+        // the equivalent is FeeRate::from_sat_per_vb(5).unwrap() because bitcoin-core uses sat/vB
+        // whilerust-bitcoin FeeRate module defaults to sat/kwu
+        //
+        // Also, in the core tests, a weight of 150 is equal to Weight::from_vb_unwrap(110).  The
+        // math is:
+        // 110 * segwit multiplyer + input_base_weight = 
+        // 110 * 4 + 160 =
+        // 150
+        let target = Amount::from_str("30 BTC").unwrap();
         let max_weight = Weight::from_wu(400_000);
-        let change_target = Amount::from_str("1 cBTC").unwrap();
-        let fee_rate = FeeRate::from_sat_per_kwu(5_000);
+        let change_target = Amount::from_str("1 BTC").unwrap();
 
-        let mut pool: Vec<Utxo> = Vec::new();
+        let fee_rate = FeeRate::from_sat_per_vb(5).unwrap();
 
         let heavy_coins = vec![3, 6, 9, 12, 15];
         let medium_coins = vec![2, 5, 8, 11, 14];
         let light_coins = vec![1, 4, 7, 10, 13];
 
+        let init = build_utxo(Amount::from_str("3 BTC").unwrap(), Weight::from_vb_unwrap(110));
+
+        let mut pool = vec![init];
         let mut heavy_utxos: Vec<Utxo> = heavy_coins
             .iter()
             .map(|a| {
-                let amt_str = format!("{} cBTC", a);
+                let amt_str = format!("{} BTC", a);
                 let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_wu(350);
+                let weight = Weight::from_vb_unwrap(310);
                 build_utxo(amt, weight)
             })
             .collect();
@@ -157,9 +157,9 @@ mod tests {
         let mut medium_utxos: Vec<Utxo> = medium_coins
             .iter()
             .map(|a| {
-                let amt_str = format!("{} cBTC", a);
+                let amt_str = format!("{} BTC", a);
                 let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_wu(250);
+                let weight = Weight::from_vb_unwrap(210);
                 build_utxo(amt, weight)
             })
             .collect();
@@ -167,9 +167,9 @@ mod tests {
         let mut light_utxos: Vec<Utxo> = light_coins
             .iter()
             .map(|a| {
-                let amt_str = format!("{} cBTC", a);
+                let amt_str = format!("{} BTC", a);
                 let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_wu(150);
+                let weight = Weight::from_vb_unwrap(110);
                 build_utxo(amt, weight)
             })
             .collect();
@@ -177,12 +177,10 @@ mod tests {
         pool.append(&mut heavy_utxos);
         pool.append(&mut medium_utxos);
         pool.append(&mut light_utxos);
-
-        println!("{}", pool.len());
+        println!("pool len {}", pool.len());
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &pool);
     }
-
 
     //fn select_coins_bnb_one() {
         //assert_coin_select("1 cBTC", &["1 cBTC"]); }
