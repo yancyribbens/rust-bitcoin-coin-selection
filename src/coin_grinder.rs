@@ -57,6 +57,7 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     fee_rate: FeeRate,
     weighted_utxos: &[Utxo],
 ) -> Option<std::vec::IntoIter<&Utxo>> {
+    println!("start");
 
     // Creates a tuple of (effective_value, weighted_utxo)
     let mut w_utxos: Vec<(Amount, &Utxo)> = weighted_utxos
@@ -85,6 +86,12 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     let lookahead: Vec<Amount> = lookahead.iter().map(|(e, w)| e).scan(available_value, |state, &u| {
         *state = *state - u;
         Some(*state)
+    }).collect();
+
+    let min_group_weight = w_utxos.clone();
+    let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.satisfaction_weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
+        *min = std::cmp::min(*min, weight);
+        Some(*min)
     }).collect();
 
     None
