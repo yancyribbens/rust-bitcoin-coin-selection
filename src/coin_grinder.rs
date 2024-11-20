@@ -124,8 +124,8 @@ mod tests {
 
         let mut pool = Vec::new();
         for i in 0..10 {
-            let one_cbtc = build_utxo(Amount::from_str("1 cBTC").unwrap(), Weight::ZERO);
-            let two_cbtc = build_utxo(Amount::from_str("2 cBTC").unwrap(), Weight::ZERO);
+            let one_cbtc = build_utxo(Amount::from_str("1 cBTC").unwrap(), Weight::ZERO, Weight::ZERO);
+            let two_cbtc = build_utxo(Amount::from_str("2 cBTC").unwrap(), Weight::ZERO, Weight::ZERO);
             pool.push(one_cbtc);
             pool.push(two_cbtc);
         }
@@ -138,7 +138,7 @@ mod tests {
                                                             //from_str like Amount::from_str()
         let target = Amount::from_str(p.target).unwrap();
         let change_target = Amount::from_str(p.change_target).unwrap();
-        let fee_rate = FeeRate::from_sat_per_kwu(fee_rate);
+        let fee_rate = FeeRate::from_sat_per_vb(fee_rate).unwrap();
         let max_weight = Weight::from_str(p.max_weight).unwrap();
 
         let w_utxos: Vec<_> = p
@@ -159,7 +159,7 @@ mod tests {
                     _ => panic!(),
                 }
             })
-            .map(|(a, w)| build_utxo(a, w))
+            .map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(40)))
             .collect();
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &w_utxos);
@@ -192,33 +192,27 @@ mod tests {
         // 110 * segwit multiplyer + input_base_weight = 
         // 110 * 4 + 160 =
         // 150
-        let target = Amount::from_str("30 BTC").unwrap();
-        let max_weight = Weight::from_wu(400_000);
-        let change_target = Amount::from_str("1 BTC").unwrap();
-
-        let fee_rate = FeeRate::from_sat_per_vb(5).unwrap();
-
         let params = ParamsStr {
             target: "30 BTC",
             change_target: "1 BTC",
             max_weight: "400000",
             fee_rate: "5", //from sat per vb
             weighted_utxos: vec![
-                "3 BTC/310",
-                "6 BTC/310",
-                "9 BTC/310",
-                "12 BTC/310",
-                "15 BTC/310",
-                "2 BTC/210",
-                "5 BTC/210",
-                "8 BTC/210",
-                "11 BTC/210",
-                "14 BTC/210",
-                "1 BTC/110",
-                "4 BTC/110",
-                "7 BTC/110",
-                "10 BTC/110",
-                "13 BTC/110",
+                "3 BTC/350",
+                "6 BTC/350",
+                "9 BTC/350",
+                "12 BTC/350",
+                "15 BTC/350",
+                "2 BTC/250",
+                "5 BTC/250",
+                "8 BTC/250",
+                "11 BTC/250",
+                "14 BTC/250",
+                "1 BTC/150",
+                "4 BTC/150",
+                "7 BTC/150",
+                "10 BTC/150",
+                "13 BTC/150",
             ]
         };
     }

@@ -43,6 +43,9 @@ pub trait WeightedUtxo {
     /// <https://github.com/bitcoindevkit/bdk/blob/feafaaca31a0a40afc03ce98591d151c48c74fa2/crates/bdk/src/types.rs#L181>
     fn satisfaction_weight(&self) -> Weight;
 
+    /// The weight
+    fn weight(&self) -> Weight;
+
     /// The UTXO value.
     fn value(&self) -> Amount;
 
@@ -119,7 +122,8 @@ mod tests {
             .map(|a| {
                 let amt = Amount::from_sat(*a);
                 let weight = Weight::ZERO;
-                build_utxo(amt, weight)
+                let satisfaction_weight = Weight::ZERO;
+                build_utxo(amt, weight, satisfaction_weight)
             })
             .collect();
 
@@ -129,16 +133,18 @@ mod tests {
     #[derive(Debug)]
     pub struct Utxo {
         pub output: TxOut,
+        pub weight: Weight,
         pub satisfaction_weight: Weight,
     }
 
-    pub fn build_utxo(amt: Amount, satisfaction_weight: Weight) -> Utxo {
+    pub fn build_utxo(amt: Amount, weight: Weight, satisfaction_weight: Weight) -> Utxo {
         let output = TxOut { value: amt, script_pubkey: ScriptBuf::new() };
-        Utxo { output, satisfaction_weight }
+        Utxo { output, weight, satisfaction_weight }
     }
 
     impl WeightedUtxo for Utxo {
         fn satisfaction_weight(&self) -> Weight { self.satisfaction_weight }
+        fn weight(&self) -> Weight { self.weight }
         fn value(&self) -> Amount { self.output.value }
     }
 
