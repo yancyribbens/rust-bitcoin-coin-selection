@@ -104,6 +104,15 @@ mod tests {
     use crate::tests::{build_utxo, Utxo};
     use crate::coin_grinder::coin_grinder;
 
+    #[derive(Debug)]
+    pub struct ParamsStr<'a> {
+        target: &'a str,
+        change_target: &'a str,
+        max_weight: &'a str,
+        fee_rate: &'a str,
+        weighted_utxos: Vec<&'a str>,
+    }
+
     #[test]
     fn coin_grinder_insufficient_funds() {
         // Insufficient funds, select all provided coins and fail
@@ -122,6 +131,51 @@ mod tests {
         }
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &pool);
+    }
+
+    fn assert_coin_select_params(p: &ParamsStr, expected_inputs: Option<&[&str]>) {
+        let fee_rate = p.fee_rate.parse::<u64>().unwrap(); // would be nice if  FeeRate had
+                                                            //from_str like Amount::from_str()
+        let target = Amount::from_str(p.target).unwrap();
+        let change_target = Amount::from_str(p.change_target).unwrap();
+        let fee_rate = FeeRate::from_sat_per_kwu(fee_rate);
+        let max_weight = Weight::from_str(p.max_weight).unwrap();
+
+        let w_utxos: Vec<_> = p
+            .weighted_utxos
+            .iter()
+            .map(|s| {
+                let v: Vec<_> = s.split("/").collect();
+                match v.len() {
+                    2 => {
+                        let a = Amount::from_str(v[0]).unwrap();
+                        let w = Weight::from_wu(v[1].parse().unwrap());
+                        (a, w)
+                    }
+                    1 => {
+                        let a = Amount::from_str(v[0]).unwrap();
+                        (a, Weight::ZERO)
+                    }
+                    _ => panic!(),
+                }
+            })
+            .map(|(a, w)| build_utxo(a, w))
+            .collect();
+
+        let c = coin_grinder(target, change_target, max_weight, fee_rate, &w_utxos);
+
+        //if expected_inputs.is_none() {
+            //assert!(iter.is_none());
+        //} else {
+            //let inputs: Vec<_> = iter.unwrap().collect();
+            //let expected_str_list: Vec<String> = expected_inputs
+                //.unwrap()
+                //.iter()
+                //.map(|s| Amount::from_str(s).unwrap().to_string())
+                //.collect();
+            //let input_str_list: Vec<String> = format_utxo_list(&inputs);
+            //assert_eq!(input_str_list, expected_str_list);
+        //}
     }
 
     #[test]
@@ -144,49 +198,29 @@ mod tests {
 
         let fee_rate = FeeRate::from_sat_per_vb(5).unwrap();
 
-        let heavy_coins = vec![3, 6, 9, 12, 15];
-        let medium_coins = vec![2, 5, 8, 11, 14];
-        let light_coins = vec![1, 4, 7, 10, 13];
-
-        let init = build_utxo(Amount::from_str("3 BTC").unwrap(), Weight::from_vb_unwrap(110));
-
-        let mut pool = vec![init];
-        let mut heavy_utxos: Vec<Utxo> = heavy_coins
-            .iter()
-            .map(|a| {
-                let amt_str = format!("{} BTC", a);
-                let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_vb_unwrap(310);
-                build_utxo(amt, weight)
-            })
-            .collect();
-
-        let mut medium_utxos: Vec<Utxo> = medium_coins
-            .iter()
-            .map(|a| {
-                let amt_str = format!("{} BTC", a);
-                let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_vb_unwrap(210);
-                build_utxo(amt, weight)
-            })
-            .collect();
-
-        let mut light_utxos: Vec<Utxo> = light_coins
-            .iter()
-            .map(|a| {
-                let amt_str = format!("{} BTC", a);
-                let amt = Amount::from_str(&amt_str).unwrap();
-                let weight = Weight::from_vb_unwrap(110);
-                build_utxo(amt, weight)
-            })
-            .collect();
-
-        pool.append(&mut heavy_utxos);
-        pool.append(&mut medium_utxos);
-        pool.append(&mut light_utxos);
-        println!("pool len {}", pool.len());
-
-        let c = coin_grinder(target, change_target, max_weight, fee_rate, &pool);
+        let params = ParamsStr {
+            target: "30 BTC",
+            change_target: "1 BTC",
+            max_weight: "400000",
+            fee_rate: "5", //from sat per vb
+            weighted_utxos: vec![
+                "3 BTC/310",
+                "6 BTC/310",
+                "9 BTC/310",
+                "12 BTC/310",
+                "15 BTC/310",
+                "2 BTC/210",
+                "5 BTC/210",
+                "8 BTC/210",
+                "11 BTC/210",
+                "14 BTC/210",
+                "1 BTC/110",
+                "4 BTC/110",
+                "7 BTC/110",
+                "10 BTC/110",
+                "13 BTC/110",
+            ]
+        };
     }
 
     //fn select_coins_bnb_one() {
