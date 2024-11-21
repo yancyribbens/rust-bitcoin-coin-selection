@@ -57,7 +57,7 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     fee_rate: FeeRate,
     weighted_utxos: &[Utxo],
 ) -> Option<std::vec::IntoIter<&Utxo>> {
-    println!("start");
+    //println!("len {}", weighted_utxos.len());
 
     // Creates a tuple of (effective_value, weighted_utxo)
     let mut w_utxos: Vec<(Amount, &Utxo)> = weighted_utxos
@@ -74,7 +74,12 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
         .map(|(eff_val, wu)| (eff_val.to_unsigned().unwrap(), wu))
         .collect();
 
+    //for (e, u) in &w_utxos {
+        //println!("value {:?}, eff_value {:?} weight {} sat_weight {}", u.value(), e, u.weight(), u.satisfaction_weight());
+    //}
+
     let available_value = w_utxos.clone().into_iter().map(|(ev, _)| ev).checked_sum()?;
+    //println!("available value {:?}", available_value);
 
     // decending sort by effective_value using weight as tie breaker.
     w_utxos.sort_by(|a, b| { 
@@ -88,11 +93,19 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
         Some(*state)
     }).collect();
 
+    //for l in lookahead {
+        //println!("lookahead {:?}", l);
+    //}
+
     let min_group_weight = w_utxos.clone();
-    let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.satisfaction_weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
+    let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
         *min = std::cmp::min(*min, weight);
         Some(*min)
     }).collect();
+
+    //for m in min_group_weight {
+        //println!("min tail weight {:?}", m);
+    //}
 
     None
 }
@@ -159,7 +172,7 @@ mod tests {
                     _ => panic!(),
                 }
             })
-            .map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(40)))
+            .map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(160)))
             .collect();
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &w_utxos);
@@ -198,23 +211,26 @@ mod tests {
             max_weight: "400000",
             fee_rate: "5", //from sat per vb
             weighted_utxos: vec![
-                "3 BTC/350",
-                "6 BTC/350",
-                "9 BTC/350",
-                "12 BTC/350",
-                "15 BTC/350",
-                "2 BTC/250",
-                "5 BTC/250",
-                "8 BTC/250",
-                "11 BTC/250",
-                "14 BTC/250",
-                "1 BTC/150",
-                "4 BTC/150",
-                "7 BTC/150",
-                "10 BTC/150",
-                "13 BTC/150",
+                "3 BTC/600",
+                "3 BTC/1400",
+                "6 BTC/1400",
+                "9 BTC/1400",
+                "12 BTC/1400",
+                "15 BTC/1400",
+                "2 BTC/1000",
+                "5 BTC/1000",
+                "8 BTC/1000",
+                "11 BTC/1000",
+                "14 BTC/1000",
+                "1 BTC/600",
+                "4 BTC/600",
+                "7 BTC/600",
+                "10 BTC/600",
+                "13 BTC/600",
             ]
         };
+
+        assert_coin_select_params(&params, None);
     }
 
     //fn select_coins_bnb_one() {
