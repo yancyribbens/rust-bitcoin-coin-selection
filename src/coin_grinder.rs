@@ -74,9 +74,9 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
         .map(|(eff_val, wu)| (eff_val.to_unsigned().unwrap(), wu))
         .collect();
 
-    //for (e, u) in &w_utxos {
-        //println!("value {:?}, eff_value {:?} weight {} sat_weight {}", u.value(), e, u.weight(), u.satisfaction_weight());
-    //}
+    for (e, u) in &w_utxos {
+        println!("value {:?}, eff_value {:?} weight {} sat_weight {}", u.value(), e, u.weight(), u.satisfaction_weight());
+    }
 
     let available_value = w_utxos.clone().into_iter().map(|(ev, _)| ev).checked_sum()?;
     //println!("available value {:?}", available_value);
@@ -93,15 +93,73 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
         Some(*state)
     }).collect();
 
-    //for l in lookahead {
-        //println!("lookahead {:?}", l);
-    //}
+    for l in lookahead {
+        println!("lookahead {:?}", l);
+    }
 
     let min_group_weight = w_utxos.clone();
     let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
         *min = std::cmp::min(*min, weight);
         Some(*min)
     }).collect();
+
+    for m in min_group_weight {
+        println!("min_group_weight: {:?}", m);
+    }
+
+    let total_target = target + change_target;
+
+    if available_value < total_target {
+        return None
+    }
+
+    //let mut selection: Vec<usize> = vec![];
+    //let best_selection: Vec<Amount> = vec![];
+
+    //let mut amount_sum: Amount = Amount::ZERO;
+    //let best_amount_sum: Amount = Amount::MAX;
+
+    //let mut weight_sum: Weight = Weight::ZERO;
+    //let best_weight_sum: Weight = max_selection_weight;
+
+    //let tx_weight_exceeded = false;
+
+    //let mut next_utxo_index = 0;
+
+    //let mut iteration = 0;
+
+    //let mut cut;
+    //while true {
+        //let (eff_value, u)= w_utxos[next_utxo_index];
+        //amount_sum += eff_value;
+        //weight_sum += u.weight();
+        //selection.push(next_utxo_index);
+        //next_utxo_index += 1;
+        //iteration += 1;
+
+        //let tail: usize = *selection.last().unwrap();
+
+        // no possibility of hitting the total along this branch. CUT
+        //if amount_sum + lookahead[tail] < total_target {
+            //cut = true;
+        // if worse solution
+        //} else if(weight_sum > best_selection_weight ) {
+             //if worse solution and out of bounds
+            //if weight_sum > max_selection_weight { // worse solution and out of bounds
+                //tx_weight_exceeded = true;
+            //}
+
+            // if worse solution and the tail is less than the best possible
+            // it's not possible to find a utxo with less weight along this branch
+            //if pool[tail].1.weight <= min_tail_weight[tail] {
+                //cut = true;
+            //} else {
+                // SHITF to the omission bracnh since the current tail is not the best
+                // possible.
+                //shift = true;
+            //}
+        //}
+    //}
 
     //for m in min_group_weight {
         //println!("min tail weight {:?}", m);
@@ -160,19 +218,27 @@ mod tests {
             .map(|s| {
                 let v: Vec<_> = s.split("/").collect();
                 match v.len() {
+                    3 => {
+                        let a = Amount::from_str(v[0]).unwrap();
+                        let w = Weight::from_wu(v[1].parse().unwrap());
+                        let s = Weight::from_wu(v[2].parse().unwrap());
+                        (a, w, s)
+                    }
                     2 => {
                         let a = Amount::from_str(v[0]).unwrap();
                         let w = Weight::from_wu(v[1].parse().unwrap());
-                        (a, w)
+                        let s = w - Weight::from_wu(160);
+                        (a, w, s)
                     }
                     1 => {
                         let a = Amount::from_str(v[0]).unwrap();
-                        (a, Weight::ZERO)
+                        (a, Weight::ZERO, Weight::ZERO)
                     }
                     _ => panic!(),
                 }
             })
-            .map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(160)))
+            //.map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(160)))
+            .map(|(a, w, s)| build_utxo(a, w, s))
             .collect();
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &w_utxos);
@@ -189,6 +255,24 @@ mod tests {
             //let input_str_list: Vec<String> = format_utxo_list(&inputs);
             //assert_eq!(input_str_list, expected_str_list);
         //}
+    }
+
+    #[test]
+    fn coin_grinder_example_solution() {
+        let params = ParamsStr {
+            target: "11 sats",
+            change_target: "0",
+            max_weight: "10",
+            fee_rate: "0", //from sat per vb
+            weighted_utxos: vec![
+                "10 sats/2/2",
+                "7 sats/1/2",
+                "5 sats/1/1",
+                "4 sats/2/2"
+            ]
+        };
+
+        //assert_coin_select_params(&params, Some("7 sats/1/2, 5 sats/1/1"));
     }
 
     #[test]
