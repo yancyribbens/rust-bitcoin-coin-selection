@@ -19,7 +19,6 @@ use crate::WeightedUtxo;
 use bitcoin::Amount;
 use bitcoin::FeeRate;
 use bitcoin::Weight;
-use bitcoin::SignedAmount;
 use bitcoin::amount::CheckedSum;
 
 //6.4.3 Highest Priority
@@ -49,21 +48,19 @@ use bitcoin::amount::CheckedSum;
 
 //Simulations for my thesis on coin selection (see Section 6.3.2.1 [PDF]) suggest that minimizing the input set for all transactions tends to grind a wallet’s UTXO pool to dust (pun intended): an approach selecting inputs per coin-age-priority (in effect similar to “largest first selection”) on average produced a UTXO pool with 15× the UTXO count as Bitcoin Core’s Knapsack-based Coin Selection then (in 2016). Therefore, I do not recommend running CoinGrinder under all circumstances, but only at extreme feerates or when we have another good reason to minimize the input set for other reasons. In the long-term, we should introduce additional metrics to score different input set candidates, e.g. on basis of their privacy and wallet health impact, to pick from all our coin selection results, but until then, we may want to limit use of CoinGrinder in other ways.
 
-use bitcoin::transaction::effective_value;
-pub fn coin_grinder<Utxo: WeightedUtxo>(
-    target: Amount,
-    change_target: Amount,
-    max_selection_weight: Weight,
-    fee_rate: FeeRate,
-    weighted_utxos: &[Utxo],
-) -> Option<std::vec::IntoIter<&Utxo>> {
-    //println!("len {}", weighted_utxos.len());
+fn build_lookahead<Utxo: WeightedUtxo>(lookahead: Vec<(Amount, &Utxo)>, available_value: Amount) -> Vec<Amount>{
+    lookahead.iter().map(|(e, _w)| e).scan(available_value, |state, &u| {
+        *state = *state - u;
+        Some(*state)
+    }).collect()
+}
 
-    // Creates a tuple of (effective_value, weighted_utxo)
-    let mut w_utxos: Vec<(Amount, &Utxo)> = weighted_utxos
+// Creates a tuple of (effective_value, weighted_utxo)
+fn calc_effective_values<'a, Utxo: WeightedUtxo>(weighted_utxos: &'a [Utxo], fee_rate: &'a FeeRate) -> Vec<(Amount, &'a Utxo)> {
+    weighted_utxos
         .iter()
         // calculate effective_value and waste for each w_utxo.
-        .map(|wu| (wu.effective_value(fee_rate), wu))
+        .map(|wu| (wu.effective_value(*fee_rate), wu))
         // remove utxos that either had an error in the effective_value calculation.
         .filter(|(eff_val, _)| eff_val.is_some())
         // unwrap the option type since we know they are not None (see previous step).
@@ -72,7 +69,20 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
         .filter(|(eff_val, _)| eff_val.is_positive())
         // all utxo effective_values are now positive (see previous step) - cast to unsigned.
         .map(|(eff_val, wu)| (eff_val.to_unsigned().unwrap(), wu))
-        .collect();
+        .collect()
+}
+
+pub fn coin_grinder<Utxo: WeightedUtxo>(
+    target: Amount,
+    change_target: Amount,
+    max_selection_weight: Weight,
+    fee_rate: FeeRate,
+    weighted_utxos: &[Utxo],
+) -> Option<std::vec::IntoIter<&Utxo>> {
+    println!("start CG");
+    //println!("len {}", weighted_utxos.len());
+
+    let mut w_utxos = calc_effective_values::<Utxo>(weighted_utxos, &fee_rate);
 
     for (e, u) in &w_utxos {
         println!("value {:?}, eff_value {:?} weight {} sat_weight {}", u.value(), e, u.weight(), u.satisfaction_weight());
@@ -87,15 +97,8 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
             .then(b.1.satisfaction_weight().cmp(&a.1.satisfaction_weight()))
     });
 
-    let lookahead = w_utxos.clone();
-    let lookahead: Vec<Amount> = lookahead.iter().map(|(e, w)| e).scan(available_value, |state, &u| {
-        *state = *state - u;
-        Some(*state)
-    }).collect();
-
-    for l in lookahead {
-        println!("lookahead {:?}", l);
-    }
+    let lookahead = build_lookahead(w_utxos.clone(), available_value);
+    println!("{:?}", lookahead);
 
     let min_group_weight = w_utxos.clone();
     let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
@@ -204,16 +207,8 @@ mod tests {
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &pool);
     }
 
-    fn assert_coin_select_params(p: &ParamsStr, expected_inputs: Option<&[&str]>) {
-        let fee_rate = p.fee_rate.parse::<u64>().unwrap(); // would be nice if  FeeRate had
-                                                            //from_str like Amount::from_str()
-        let target = Amount::from_str(p.target).unwrap();
-        let change_target = Amount::from_str(p.change_target).unwrap();
-        let fee_rate = FeeRate::from_sat_per_vb(fee_rate).unwrap();
-        let max_weight = Weight::from_str(p.max_weight).unwrap();
-
-        let w_utxos: Vec<_> = p
-            .weighted_utxos
+    fn build_utxos(weighted_utxos: Vec<&str>) -> Vec<Utxo>{
+        weighted_utxos
             .iter()
             .map(|s| {
                 let v: Vec<_> = s.split("/").collect();
@@ -239,7 +234,18 @@ mod tests {
             })
             //.map(|(a, w)| build_utxo(a, w, w - Weight::from_wu(160)))
             .map(|(a, w, s)| build_utxo(a, w, s))
-            .collect();
+            .collect()
+    }
+
+    fn assert_coin_select_params(p: &ParamsStr, expected_inputs: Option<&[&str]>) {
+        let fee_rate = p.fee_rate.parse::<u64>().unwrap(); // would be nice if  FeeRate had
+                                                            //from_str like Amount::from_str()
+        let target = Amount::from_str(p.target).unwrap();
+        let change_target = Amount::from_str(p.change_target).unwrap();
+        let fee_rate = FeeRate::from_sat_per_vb(fee_rate).unwrap();
+        let max_weight = Weight::from_str(p.max_weight).unwrap();
+
+        let w_utxos: Vec<_> = build_utxos(p.weighted_utxos.clone());
 
         let c = coin_grinder(target, change_target, max_weight, fee_rate, &w_utxos);
 
@@ -258,6 +264,22 @@ mod tests {
     }
 
     #[test]
+    fn lookahead() {
+        let weighted_utxos = vec![
+            "10 sats/8/8",
+            "7 sats/4/4",
+            "5 sats/4/4",
+            "4 sats/8/8"
+        ];
+
+        let utxos: Vec<_> = build_utxos(weighted_utxos);
+        let eff_values: Vec<(Amount, &Utxo)> = calc_effective_values(&utxos, &FeeRate::ZERO);
+        let available_value = Amount::from_str("26 sats").unwrap();
+        let lookahead = build_lookahead(eff_values, available_value);  
+        // add assert
+    }
+
+    #[test]
     fn coin_grinder_example_solution() {
         let params = ParamsStr {
             target: "11 sats",
@@ -265,14 +287,14 @@ mod tests {
             max_weight: "10",
             fee_rate: "0", //from sat per vb
             weighted_utxos: vec![
-                "10 sats/2/2",
-                "7 sats/1/2",
-                "5 sats/1/1",
-                "4 sats/2/2"
+                "10 sats/8/8",
+                "7 sats/4/4",
+                "5 sats/4/4",
+                "4 sats/8/8"
             ]
         };
 
-        //assert_coin_select_params(&params, Some("7 sats/1/2, 5 sats/1/1"));
+        assert_coin_select_params(&params, Some(&["7 sats/1/4, 5 sats/1/4"]));
     }
 
     #[test]
