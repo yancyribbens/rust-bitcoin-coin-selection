@@ -48,6 +48,7 @@ use bitcoin::amount::CheckedSum;
 
 //Simulations for my thesis on coin selection (see Section 6.3.2.1 [PDF]) suggest that minimizing the input set for all transactions tends to grind a wallet’s UTXO pool to dust (pun intended): an approach selecting inputs per coin-age-priority (in effect similar to “largest first selection”) on average produced a UTXO pool with 15× the UTXO count as Bitcoin Core’s Knapsack-based Coin Selection then (in 2016). Therefore, I do not recommend running CoinGrinder under all circumstances, but only at extreme feerates or when we have another good reason to minimize the input set for other reasons. In the long-term, we should introduce additional metrics to score different input set candidates, e.g. on basis of their privacy and wallet health impact, to pick from all our coin selection results, but until then, we may want to limit use of CoinGrinder in other ways.
 
+// The sum of UTXO amounts after this UTXO index, e.g. lookahead[5] = Σ(UTXO[6+].amount)
 fn build_lookahead<Utxo: WeightedUtxo>(lookahead: Vec<(Amount, &Utxo)>, available_value: Amount) -> Vec<Amount>{
     lookahead.iter().map(|(e, _w)| e).scan(available_value, |state, &u| {
         *state = *state - u;
@@ -72,6 +73,23 @@ fn calc_effective_values<'a, Utxo: WeightedUtxo>(weighted_utxos: &'a [Utxo], fee
         .collect()
 }
 
+// The minimum UTXO weight among the remaining UTXOs after this UTXO index, e.g. min_tail_weight[5] = min(UTXO[6+].weight)
+fn build_min_group_weight<'a, Utxo: WeightedUtxo>(weighted_utxos: Vec<(Amount, &Utxo)>) -> Vec<Weight> { 
+    let mut min_group_weight: Vec<Weight> = vec![];
+    let mut min = Weight::MAX;
+
+    for (a, u) in &weighted_utxos {
+        min_group_weight.push(min);
+        let weight = u.satisfaction_weight();
+
+        if weight < min {
+            min = weight;
+        }
+    }
+
+    min_group_weight.into_iter().rev().collect()
+}
+
 pub fn coin_grinder<Utxo: WeightedUtxo>(
     target: Amount,
     change_target: Amount,
@@ -79,17 +97,8 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     fee_rate: FeeRate,
     weighted_utxos: &[Utxo],
 ) -> Option<std::vec::IntoIter<&Utxo>> {
-    println!("start CG");
-    //println!("len {}", weighted_utxos.len());
-
     let mut w_utxos = calc_effective_values::<Utxo>(weighted_utxos, &fee_rate);
-
-    for (e, u) in &w_utxos {
-        println!("value {:?}, eff_value {:?} weight {} sat_weight {}", u.value(), e, u.weight(), u.satisfaction_weight());
-    }
-
     let available_value = w_utxos.clone().into_iter().map(|(ev, _)| ev).checked_sum()?;
-    //println!("available value {:?}", available_value);
 
     // decending sort by effective_value using weight as tie breaker.
     w_utxos.sort_by(|a, b| { 
@@ -98,17 +107,9 @@ pub fn coin_grinder<Utxo: WeightedUtxo>(
     });
 
     let lookahead = build_lookahead(w_utxos.clone(), available_value);
-    println!("{:?}", lookahead);
 
-    let min_group_weight = w_utxos.clone();
-    let min_group_weight: Vec<_> = min_group_weight.iter().rev().map(|(e, u)| u.weight()).scan(Weight::MAX, |min:&mut Weight, weight:Weight| {
-        *min = std::cmp::min(*min, weight);
-        Some(*min)
-    }).collect();
-
-    for m in min_group_weight {
-        println!("min_group_weight: {:?}", m);
-    }
+    //let min_group_weight = w_utxos.clone();
+    let min_group_weight = build_min_group_weight(w_utxos.clone());
 
     let total_target = target + change_target;
 
@@ -264,6 +265,28 @@ mod tests {
     }
 
     #[test]
+    fn min_group_weight() {
+        let weighted_utxos = vec![
+            "10 sats/8/8",
+            "7 sats/4/4",
+            "5 sats/4/4",
+            "4 sats/8/8"
+        ];
+
+        let utxos: Vec<_> = build_utxos(weighted_utxos);
+        let eff_values: Vec<(Amount, &Utxo)> = calc_effective_values(&utxos, &FeeRate::ZERO);
+        let min_group_weight = build_min_group_weight(eff_values.clone());
+
+        let expect: Vec<Weight> = vec![
+            4u64,
+            4u64,
+            8u64,
+            18446744073709551615u64
+        ].iter().map(|w| Weight::from_wu(*w)).collect();
+        assert_eq!(min_group_weight, expect);
+    }
+
+    #[test]
     fn lookahead() {
         let weighted_utxos = vec![
             "10 sats/8/8",
@@ -276,7 +299,15 @@ mod tests {
         let eff_values: Vec<(Amount, &Utxo)> = calc_effective_values(&utxos, &FeeRate::ZERO);
         let available_value = Amount::from_str("26 sats").unwrap();
         let lookahead = build_lookahead(eff_values, available_value);  
-        // add assert
+
+        let expect: Vec<Amount> = vec![
+            "16 sats",
+            "9 sats",
+            "4 sats",
+            "0 sats"
+        ].iter().map(|s| Amount::from_str(s).unwrap()).collect();
+
+        assert_eq!(lookahead, expect);
     }
 
     #[test]
