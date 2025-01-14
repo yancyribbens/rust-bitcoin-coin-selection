@@ -401,4 +401,25 @@ mod tests {
 
         assert_coin_select_params(&params, None);
     }
+
+    #[test]
+    fn max_weight_with_result() {
+        let mut coins = Vec::new();
+        for _i in 0..60 {
+            coins.push("0.33 BTC/272");
+        }
+        for _i in 0..10 {
+            coins.push("2 BTC/272");
+        }
+
+        let params = ParamsStr {
+            target: "25.33 BTC",
+            change_target: "1000000 sats",
+            max_weight: "3000",
+            fee_rate: "5",
+            weighted_utxos: coins 
+        };
+
+        assert_coin_select_params(&params, None);
+    }
 }
