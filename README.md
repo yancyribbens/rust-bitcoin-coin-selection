@@ -17,7 +17,11 @@ As discussed in the literature above, we want to find a "changeless" solution.  
 
 ## Fuzz
 
-Fuzz with `cargo fuzz run select_coins_srd`, `cargo fuzz run select_coins_bnb` or `cargo fuzz run select_coins`.
+Install [cargo fuzz]( https://crates.io/crates/cargo-fuzz):
+`cargo install cargo-fuzz`
+
+Fuzz with:
+`cargo fuzz run select_coins_srd`, `cargo fuzz run select_coins_bnb` or `cargo fuzz run select_coins`.
 
 ## Proptest
 
