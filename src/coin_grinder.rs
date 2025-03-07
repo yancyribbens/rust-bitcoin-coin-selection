@@ -145,6 +145,12 @@ pub fn select_coins<Utxo: WeightedUtxo>(
     fee_rate: FeeRate,
     weighted_utxos: &[Utxo],
 ) -> Option<(u32, std::vec::IntoIter<&Utxo>)> {
+    let weight_sum =
+        weighted_utxos.iter().map(|u| u.weight()).try_fold(Weight::ZERO, Weight::checked_add);
+    if weight_sum.is_none() {
+        return None;
+    }
+
     let mut w_utxos = calc_effective_values::<Utxo>(weighted_utxos, fee_rate);
 
     let available_value = w_utxos.clone().into_iter().map(|(ev, _)| ev).checked_sum()?;
@@ -155,7 +161,7 @@ pub fn select_coins<Utxo: WeightedUtxo>(
     let lookahead = build_lookahead(w_utxos.clone(), available_value);
     let min_tail_weight = build_min_tail_weight(w_utxos.clone());
 
-    let total_target = target + change_target;
+    let total_target = target.checked_add(change_target)?;
 
     if available_value < total_target {
         return None;
@@ -225,7 +231,7 @@ pub fn select_coins<Utxo: WeightedUtxo>(
         let (eff_value, u) = w_utxos[next_utxo_index];
 
         amount_total += eff_value;
-        weight_total = weight_total.checked_add(u.weight())?;
+        weight_total += u.weight();
 
         selection.push(next_utxo_index);
         next_utxo_index += 1;
@@ -594,6 +600,20 @@ mod tests {
                 "5 sats/4 wu",
                 "4 sats/18446744073709551615 wu", //u64::MAX
             ],
+            expected_utxos: None,
+            expected_iterations: 8,
+        }
+        .assert();
+    }
+
+    #[test]
+    fn max_target_and_max_change_target() {
+        TestCoinGrinder {
+            target: "18446744073709551615 sats",        //u64::MAX
+            change_target: "18446744073709551615 sats", //u64::MAX
+            max_weight: "100",
+            fee_rate: "0",
+            weighted_utxos: &["10 sats/8 wu", "7 sats/4 wu", "5 sats/4 wu", "4 sats/8 wu"],
             expected_utxos: None,
             expected_iterations: 8,
         }
