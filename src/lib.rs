@@ -223,8 +223,14 @@ mod tests {
                     amt = Amount::from_str(v[0]).unwrap();
                     let size: String = v[1].parse().unwrap();
                     let size_parts: Vec<_> = size.split(" ").collect();
-                    assert_eq!(size_parts[1], "wu");
-                    weight = Weight::from_str(size_parts[0]).unwrap();
+                    let size_int = size_parts[0].parse::<u64>().unwrap();
+
+                    // TODO check about adding this to rust-bitcoins from_str for Weight
+                    weight = match size_parts[1] {
+                        "wu" => Weight::from_wu(size_int),
+                        "vb" => Weight::from_vb(size_int).unwrap(),
+                        _ => panic!("only support wu or vb sizes"),
+                    }
                 }
                 1 => {
                     amt = Amount::from_str(v[0]).unwrap();
