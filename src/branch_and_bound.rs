@@ -707,6 +707,52 @@ mod tests {
     }
 
     #[test]
+    fn select_coins_bnb_choose_heavy_utxos_when_fees_are_expensive() {
+        // conversely, when fees are cheap, prefer heavy UTXOs
+        let utxos = vec![
+            "2 cBTC/68 vb",
+            "3 cBTC/68 vb",
+            "5 cBTC/68 vb",
+            "6 cBTC/500 vb",
+            "7 cBTC/500 vb",
+            "10 cBTC/68 vb",
+        ];
+
+        let params = ParamsStr {
+            target: "13 cBTC",
+            cost_of_change: "359 sats",
+            fee_rate: "5000 sat/vb",
+            lt_fee_rate: "3000 sat/vb",
+            weighted_utxos: utxos,
+        };
+
+        assert_coin_select_params(&params, 100000, Some(&["6 cBTC", "7 cBTC"]));
+    }
+
+    #[test]
+    fn select_coins_bnb_choose_lite_utxos_when_fees_are_cheap() {
+        // When fees are expensive, prefer light-weight UTXOs
+        let utxos = vec![
+            "2 cBTC/68 vb",
+            "3 cBTC/68 vb",
+            "5 cBTC/68 vb",
+            "6 cBTC/500 vb",
+            "7 cBTC/500 vb",
+            "10 cBTC/68 vb",
+        ];
+
+        let params = ParamsStr {
+            target: "13 cBTC",
+            cost_of_change: "359 sats",
+            fee_rate: "5000 sat/vb",
+            lt_fee_rate: "3000 sat/vb",
+            weighted_utxos: utxos,
+        };
+
+        assert_coin_select_params(&params, 100000, Some(&["3 cBTC", "10 cBTC"]));
+    }
+
+    #[test]
     fn select_coins_bnb_exhaust() {
         // Recreate make_hard from bitcoin core test suit.
         // Takes 327,661 iterations to find a solution.
