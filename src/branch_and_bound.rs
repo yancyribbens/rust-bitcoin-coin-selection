@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn select_coins_bnb_effective_value() {
         let params = ParamsStr {
-            target: "1 cBTC",
+            target: "11 cBTC",
             cost_of_change: "0",
             fee_rate: "10",
             lt_fee_rate: "10",
