@@ -243,6 +243,26 @@ mod tests {
         }
     }
 
+    impl FromStr for UtxoPool {
+        type Err = ParseUtxoError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let without_prefix = s.strip_prefix("[").unwrap();
+            let inner = without_prefix.strip_suffix("]").unwrap();
+            let utxos: Vec<_> = inner.split(",").map(|s| {
+                Utxo::from_str(s.trim()).unwrap()
+            }).collect();
+            Ok(UtxoPool::new(utxos))
+        }
+    }
+
+    #[test]
+    fn to_absolute_values() {
+        let str_pool = "[1 cBTC/68 vb, 2 cBTC/500 vb]"; 
+        let pool = UtxoPool::from_str(str_pool).unwrap();
+        assert_eq!(pool.utxos.len(), 2);
+    }
+
     #[test]
     fn utxo_to_from_string() {
         let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
