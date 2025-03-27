@@ -184,18 +184,13 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct UtxoPool {
         pub utxos: Vec<Utxo>,
     }
 
     impl UtxoPool {
         pub fn new(utxos: Vec<Utxo>) -> UtxoPool { UtxoPool { utxos } }
-
-        pub fn from_str_list(list: &[&str]) -> UtxoPool {
-            let utxos: Vec<Utxo> = list.iter().map(|s| Utxo::from_str(s).unwrap()).collect();
-            Self::new(utxos)
-        }
     }
 
     impl WeightedUtxo for Utxo {
@@ -257,13 +252,6 @@ mod tests {
     }
 
     #[test]
-    fn to_absolute_values() {
-        let str_pool = "[1 cBTC/68 vb, 2 cBTC/500 vb]"; 
-        let pool = UtxoPool::from_str(str_pool).unwrap();
-        assert_eq!(pool.utxos.len(), 2);
-    }
-
-    #[test]
     fn utxo_to_from_string() {
         let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
 
@@ -271,6 +259,25 @@ mod tests {
         let weight = Weight::from_wu(124);
         let expected_utxo = Utxo::new(amount, weight);
         assert_eq!(utxo, expected_utxo);
+    }
+
+    #[test]
+    fn utxo_pool_from_str() {
+        let str_pool = "[1 cBTC/68 vb, 2 cBTC/500 vb]"; 
+        let pool = UtxoPool::from_str(str_pool).unwrap();
+        assert_eq!(pool.utxos.len(), 2);
+
+        let amount_a = Amount::from_str("1 cBTC").unwrap();
+        let weight_a = Weight::from_vb(68).unwrap();
+        let utxo_a = Utxo::new(amount_a, weight_a);
+
+        let amount_b = Amount::from_str("2 cBTC").unwrap();
+        let weight_b = Weight::from_vb(500).unwrap();
+        let utxo_b = Utxo::new(amount_b, weight_b);
+
+        let utxos = vec![utxo_a, utxo_b];
+        let expected = UtxoPool::new(utxos);
+        assert_eq!(pool, expected);
     }
 
     #[test]

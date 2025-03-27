@@ -342,7 +342,7 @@ mod tests {
         cost_of_change: &'a str,
         fee_rate: &'a str,
         lt_fee_rate: &'a str,
-        weighted_utxos: Vec<&'a str>,
+        weighted_utxos: &'a str,
     }
 
     fn assert_coin_select(
@@ -399,13 +399,13 @@ mod tests {
         let fee_rate = parse_fee_rate(p.fee_rate);
         let lt_fee_rate = parse_fee_rate(p.lt_fee_rate);
 
-        let pool: UtxoPool = UtxoPool::from_str_list(&p.weighted_utxos);
+        let pool: UtxoPool = UtxoPool::from_str(&p.weighted_utxos).unwrap();
         let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &pool.utxos);
 
         if let Some((iterations, inputs)) = result {
             assert_eq!(iterations, expected_iterations);
 
-            let expected: UtxoPool = UtxoPool::from_str_list(expected_inputs_str.unwrap());
+            let expected: UtxoPool = UtxoPool::from_str(expected_inputs_str.unwrap()).unwrap();
             assert_ref_eq(inputs, expected.utxos);
         } else {
             assert!(expected_inputs_str.is_none());
@@ -758,6 +758,8 @@ mod tests {
             "1 cBTC/500 vb",
         ];
 
+        let u:&str = Vec::from(utxos);
+
         let params = ParamsStr {
             target: "13 cBTC",
             cost_of_change: "359 sats",
@@ -771,10 +773,7 @@ mod tests {
 
     #[test]
     fn select_coins_bnb_choose_lite_utxo_with_equal_effective_value_when_fees_are_expensive() {
-        let utxos = vec![
-            "1 cBTC/68 vb",
-            "1 cBTC/500 vb",
-        ];
+        let utxos = "[1 cBTC/68 vb, 1 cBTC/500 vb]";
 
         let params = ParamsStr {
             target: "1 cBTC",
