@@ -196,6 +196,11 @@ mod tests {
             let utxos: Vec<Utxo> = list.iter().map(|s| Utxo::from_str(s).unwrap()).collect();
             Self::new(utxos)
         }
+
+        pub fn to_absolute_values(&self, fee_rate: FeeRate) -> UtxoPool {
+            let utxos = self.utxos.iter().map(|u| u.to_absolute_value(fee_rate)).collect();
+            UtxoPool::new(utxos)
+        }
     }
 
     impl WeightedUtxo for Utxo {
@@ -207,6 +212,13 @@ mod tests {
         pub fn new(value: Amount, satisfaction_weight: Weight) -> Utxo {
             let output = TxOut { value, script_pubkey: ScriptBuf::new() };
             Utxo { output, satisfaction_weight }
+        }
+
+        pub fn to_absolute_value(&self, fee_rate: FeeRate) -> Utxo {
+            let weight = self.satisfaction_weight() + BASE_WEIGHT;
+            let value = self.value() + fee_rate.fee_wu(weight).unwrap();
+
+            Utxo::new(value, self.satisfaction_weight())
         }
     }
 
@@ -258,9 +270,18 @@ mod tests {
 
     #[test]
     fn to_absolute_values() {
-        let str_pool = "[1 cBTC/68 vb, 2 cBTC/500 vb]"; 
-        let pool = UtxoPool::from_str(str_pool).unwrap();
-        assert_eq!(pool.utxos.len(), 2);
+        let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
+        let fee_rate = FeeRate::from_sat_per_kwu(10);
+        let utxo_abs = utxo.to_absolute_value(fee_rate);
+
+        let abs_value = Amount::from_str("1004 sats").unwrap();
+        assert_eq!(utxo_abs.value(), abs_value);
+        assert_eq!(utxo_abs.satisfaction_weight(), utxo.satisfaction_weight());
+
+        let p = vec![utxo];
+        let utxo_pool = UtxoPool::new(p);
+        let abs_pool = utxo_pool.to_absolute_values(fee_rate);
+        assert_eq!(abs_pool.utxos[0], utxo_abs);
     }
 
     #[test]
