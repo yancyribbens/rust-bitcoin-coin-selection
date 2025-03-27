@@ -135,7 +135,7 @@ mod tests {
     use arbtest::arbtest;
     use bitcoin::amount::CheckedSum;
     use bitcoin::transaction::effective_value;
-    use bitcoin::{Amount, ScriptBuf, TxOut, Weight};
+    use bitcoin::{Amount, Weight};
 
     use super::*;
 
@@ -149,13 +149,14 @@ mod tests {
             .map(|a| {
                 let amt = Amount::from_sat(*a);
                 let weight = Weight::ZERO;
-                Utxo::new(amt, weight)
+                Utxo::new(SignedAmount::ZERO, amt, weight)
             })
             .collect();
 
         utxos
     }
 
+    #[track_caller]
     pub fn assert_ref_eq(inputs: Vec<&Utxo>, expected: Vec<Utxo>) {
         let expected_ref: Vec<&Utxo> = expected.iter().collect();
         assert_eq!(inputs, expected_ref);
@@ -185,8 +186,10 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Ord, Eq, PartialOrd, Arbitrary)]
     pub struct Utxo {
-        pub output: TxOut,
+        // is satisfaction_weight needed?
         pub satisfaction_weight: Weight,
+        pub absolute_value: Amount,
+        pub effective_value: SignedAmount,
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -211,52 +214,76 @@ mod tests {
         pub utxos: Vec<Utxo>,
     }
 
-    impl UtxoPool {
-        pub fn new(utxos: Vec<Utxo>) -> UtxoPool { UtxoPool { utxos } }
+    // TODO check about adding this to rust-bitcoins from_str for Weight
+    fn parse_weight(weight: &str) -> Weight {
+        let size_parts: Vec<_> = weight.split(" ").collect();
+        let size_int = size_parts[0].parse::<u64>().unwrap();
+        match size_parts[1] {
+            "wu" => Weight::from_wu(size_int),
+            "vb" => Weight::from_vb(size_int).unwrap(),
+            _ => panic!("only support wu or vb sizes"),
+        }
+    }
 
-        pub fn from_str_list(list: &[&str]) -> UtxoPool {
-            let utxos: Vec<Utxo> = list.iter().map(|s| Utxo::from_str(s).unwrap()).collect();
-            Self::new(utxos)
+    impl UtxoPool {
+        pub fn from_effective_vals(
+            effective_vals_and_sizes: &[&str],
+            fee_rate: FeeRate,
+        ) -> UtxoPool {
+            let utxos: Vec<_> = effective_vals_and_sizes
+                .iter()
+                .map(|u| {
+                    let val_and_size: Vec<_> = u.split("/").collect();
+                    let eff_value = SignedAmount::from_str(val_and_size[0]).unwrap();
+                    let weight = parse_weight(val_and_size[1]);
+                    let abs_val = compute_absolute_value(eff_value, weight, fee_rate);
+                    Utxo::new(eff_value, abs_val, weight - BASE_WEIGHT)
+                })
+                .collect();
+
+            UtxoPool { utxos }
+        }
+
+        pub fn from_absolute_vals(absolute_vals_and_sizes: &[&str]) -> UtxoPool {
+            let utxos: Vec<_> = absolute_vals_and_sizes
+                .iter()
+                .map(|u| {
+                    let val_and_size: Vec<_> = u.split("/").collect();
+                    let abs_val = Amount::from_str(val_and_size[0]).unwrap();
+                    let weight = parse_weight(val_and_size[1]);
+                    //let abs_val = compute_absolute_value(eff_value, weight, fee_rate);
+                    Utxo::new(SignedAmount::ZERO, abs_val, weight - BASE_WEIGHT)
+                })
+                .collect();
+
+            UtxoPool { utxos }
         }
     }
 
     impl WeightedUtxo for Utxo {
         fn satisfaction_weight(&self) -> Weight { self.satisfaction_weight }
-        fn value(&self) -> Amount { self.output.value }
+        fn value(&self) -> Amount { self.absolute_value } // absolute_value
     }
 
     impl Utxo {
-        pub fn new(value: Amount, satisfaction_weight: Weight) -> Utxo {
-            let output = TxOut { value, script_pubkey: ScriptBuf::new() };
-            Utxo { output, satisfaction_weight }
+        pub fn new(
+            effective_value: SignedAmount,
+            absolute_value: Amount,
+            satisfaction_weight: Weight,
+        ) -> Utxo {
+            Utxo { effective_value, absolute_value, satisfaction_weight }
         }
     }
 
-    impl FromStr for Utxo {
-        type Err = ParseUtxoError;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let v: Vec<_> = s.split("/").collect();
-
-            let amt;
-            let weight;
-            match v.len() {
-                2 => {
-                    amt = Amount::from_str(v[0]).unwrap();
-                    let size: String = v[1].parse().unwrap();
-                    let size_parts: Vec<_> = size.split(" ").collect();
-                    assert_eq!(size_parts[1], "wu");
-                    weight = Weight::from_str(size_parts[0]).unwrap();
-                }
-                1 => {
-                    amt = Amount::from_str(v[0]).unwrap();
-                    weight = Weight::ZERO;
-                }
-                _ => panic!(), //TODO return error
-            }
-
-            Ok(Utxo::new(amt, weight))
-        }
+    // TODO add to RB along side effective_value maybe
+    pub fn compute_absolute_value(
+        effective_value: SignedAmount,
+        weight: Weight,
+        fee_rate: FeeRate,
+    ) -> Amount {
+        let signed_fee = fee_rate.fee_wu(weight).unwrap().to_signed().unwrap();
+        let signed_absolute_value = effective_value + signed_fee;
+        signed_absolute_value.to_unsigned().unwrap()
     }
 
     pub fn build_possible_solutions_srd<'a>(
@@ -407,16 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn utxo_to_from_string() {
-        let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
-
-        let amount = Amount::from_str("1001 sat").unwrap();
-        let weight = Weight::from_wu(124);
-        let expected_utxo = Utxo::new(amount, weight);
-        assert_eq!(utxo, expected_utxo);
-    }
-
-    #[test]
     fn select_coins_no_solution() {
         let target = Amount::from_sat(255432);
         let cost_of_change = Amount::ZERO;
@@ -467,7 +484,7 @@ mod tests {
         assert_eq!(16, iterations);
     }
 
-     #[test]
+    #[test]
     fn select_coins_proptest() {
         arbtest(|u| {
             let pool = UtxoPool::arbitrary(u)?;
