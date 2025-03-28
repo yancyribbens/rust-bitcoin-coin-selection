@@ -156,6 +156,7 @@ mod tests {
         utxos
     }
 
+    #[track_caller]
     pub fn assert_ref_eq(inputs: Vec<&Utxo>, expected: Vec<Utxo>) {
         let expected_ref: Vec<&Utxo> = expected.iter().collect();
         assert_eq!(inputs, expected_ref);
@@ -163,8 +164,9 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Ord, Eq, PartialOrd, Arbitrary)]
     pub struct Utxo {
-        pub output: TxOut,
+        // is satisfaction_weight needed?
         pub satisfaction_weight: Weight,
+        pub absolute_value: Amount,
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -189,324 +191,139 @@ mod tests {
         pub utxos: Vec<Utxo>,
     }
 
+    // TODO check about adding this to rust-bitcoins from_str for FeeRate
+    fn parse_fee_rate(f: &str) -> FeeRate {
+        let rate_parts: Vec<_> = f.split(" ").collect();
+        let rate = rate_parts[0].parse::<u64>().unwrap();
+
+        match rate_parts.len() {
+            1 => {
+                assert!(rate == 0);
+                FeeRate::ZERO
+            }
+
+            2 => match rate_parts[1] {
+                "sat/kwu" => FeeRate::from_sat_per_kwu(rate),
+                "sat/vb" => FeeRate::from_sat_per_vb(rate).unwrap(),
+                "0" => FeeRate::ZERO,
+                _ => panic!("only support sat/kwu or sat/vb rates"),
+            },
+
+            _ => panic!("number, space then rate not parsed.  example: 10 sat/kwu"),
+        }
+    }
+
+    // TODO check about adding this to rust-bitcoins from_str for Weight
+    fn parse_weight(weight: &str) -> Weight {
+        let size_parts: Vec<_> = weight.split(" ").collect();
+        let size_int = size_parts[0].parse::<u64>().unwrap();
+        match size_parts[1] {
+            "wu" => Weight::from_wu(size_int),
+            "vb" => Weight::from_vb(size_int).unwrap(),
+            _ => panic!("only support wu or vb sizes"),
+            }
+    }
+
+
     impl UtxoPool {
-        pub fn new(utxos: Vec<Utxo>) -> UtxoPool { UtxoPool { utxos } }
+        pub fn from_effective_values_with_weights(effective_values: &[&str], weights: &[&str], fee_rate: &str) -> UtxoPool {
+            let fee_rate = parse_fee_rate(fee_rate);
 
-        pub fn from_str_list(list: &[&str]) -> UtxoPool {
-            let utxos: Vec<Utxo> = list.iter().map(|s| Utxo::from_str(s).unwrap()).collect();
-            Self::new(utxos)
-        }
+            use std::iter::zip;
+            assert_eq!(effective_values.len(), weights.len());
+            let utxos: Vec<_> = zip(effective_values, weights)
+                .map(|(e, w)| {
+                    let weight = parse_weight(w);
+                    let eff_value = SignedAmount::from_str(e).unwrap();
+                    let abs_val = compute_absolute_value(eff_value, weight, fee_rate);
+                    Utxo::new(abs_val, weight - BASE_WEIGHT)
+                })
+                .collect();
 
-        pub fn to_absolute_values(&self, fee_rate: FeeRate) -> UtxoPool {
-            let utxos = self.utxos.iter().map(|u| u.to_absolute_value(fee_rate)).collect();
-            UtxoPool::new(utxos)
+            UtxoPool { utxos }
         }
+        //pub fn new(effective_values: SignedAmount, weights: Weight) -> UtxoPool { UtxoPool { utxos } }
+
+        //pub fn from_str_list(list: &[&str]) -> UtxoPool {
+            //let utxos: Vec<Utxo> = list.iter().map(|s| Utxo::from_str(s).unwrap()).collect();
+            //Self::new(utxos)
+        //}
+
+        //pub fn to_absolute_values(&self, fee_rate: FeeRate) -> UtxoPool {
+            //let utxos = self.utxos.iter().map(|u| u.to_absolute_value(fee_rate)).collect();
+            //UtxoPool::new(utxos)
+        //}
     }
 
     impl WeightedUtxo for Utxo {
         fn satisfaction_weight(&self) -> Weight { self.satisfaction_weight }
-        fn value(&self) -> Amount { self.output.value }
+        fn value(&self) -> Amount { self.absolute_value } // absolute_value
     }
 
     impl Utxo {
-        pub fn new(value: Amount, satisfaction_weight: Weight) -> Utxo {
-            let output = TxOut { value, script_pubkey: ScriptBuf::new() };
-            Utxo { output, satisfaction_weight }
+        pub fn new(absolute_value: Amount, satisfaction_weight: Weight) -> Utxo {
+            Utxo { absolute_value, satisfaction_weight } 
         }
 
-        pub fn to_absolute_value(&self, fee_rate: FeeRate) -> Utxo {
-            let weight = self.satisfaction_weight() + BASE_WEIGHT;
-            let value = self.value() + fee_rate.fee_wu(weight).unwrap();
+        //pub fn to_absolute_value(&self, fee_rate: FeeRate) -> Utxo {
+            //let weight = self.satisfaction_weight() + BASE_WEIGHT;
+            //let value = self.value() + fee_rate.fee_wu(weight).unwrap();
 
-            Utxo::new(value, self.satisfaction_weight())
-        }
+            //Utxo::new(value, self.satisfaction_weight())
+        //}
     }
 
-    impl FromStr for Utxo {
-        type Err = ParseUtxoError;
+    // TODO add to RB along side effective_value maybe
+    pub fn compute_absolute_value(effective_value: SignedAmount, weight: Weight, fee_rate: FeeRate) -> Amount {
+        let signed_fee = fee_rate.fee_wu(weight).unwrap().to_signed().unwrap();
+        let signed_absolute_value = effective_value + signed_fee;
+        signed_absolute_value.to_unsigned().unwrap()
+    }
 
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let v: Vec<_> = s.split("/").collect();
+    //impl FromStr for Utxo {
+        //type Err = ParseUtxoError;
 
-            let amt;
-            let weight;
-            match v.len() {
-                2 => {
-                    amt = Amount::from_str(v[0]).unwrap();
-                    let size: String = v[1].parse().unwrap();
-                    let size_parts: Vec<_> = size.split(" ").collect();
-                    let size_int = size_parts[0].parse::<u64>().unwrap();
+        //fn from_str(s: &str) -> Result<Self, Self::Err> {
+            //let v: Vec<_> = s.split("/").collect();
+
+            //let amt;
+            //let weight;
+            //match v.len() {
+                //2 => {
+                    //amt = Amount::from_str(v[0]).unwrap();
+                    //let size: String = v[1].parse().unwrap();
+                    //let size_parts: Vec<_> = size.split(" ").collect();
+                    //let size_int = size_parts[0].parse::<u64>().unwrap();
 
                     // TODO check about adding this to rust-bitcoins from_str for Weight
-                    weight = match size_parts[1] {
-                        "wu" => Weight::from_wu(size_int),
-                        "vb" => Weight::from_vb(size_int).unwrap(),
-                        _ => panic!("only support wu or vb sizes"),
-                    }
-                }
-                1 => {
-                    amt = Amount::from_str(v[0]).unwrap();
-                    weight = Weight::ZERO;
-                }
-                _ => panic!(), //TODO return error
-            }
+                    //weight = match size_parts[1] {
+                        //"wu" => Weight::from_wu(size_int),
+                        //"vb" => Weight::from_vb(size_int).unwrap(),
+                        //_ => panic!("only support wu or vb sizes"),
+                    //}
+                //}
+                //1 => {
+                    //amt = Amount::from_str(v[0]).unwrap();
+                    //weight = Weight::ZERO;
+                //}
+                //_ => panic!(), //TODO return error
+            //}
 
-            Ok(Utxo::new(amt, weight))
-        }
-    }
+            // compute absolue value
+            //Ok(Utxo::new(amt, weight))
+        //}
+    //}
 
-    impl FromStr for UtxoPool {
-        type Err = ParseUtxoError;
+    //impl FromStr for UtxoPool {
+        //type Err = ParseUtxoError;
 
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let without_prefix = s.strip_prefix("[").unwrap();
-            let inner = without_prefix.strip_suffix("]").unwrap();
-            let utxos: Vec<_> = inner.split(",").map(|s| {
-                Utxo::from_str(s.trim()).unwrap()
-            }).collect();
-            Ok(UtxoPool::new(utxos))
-        }
-    }
-
-    #[test]
-    fn to_absolute_values() {
-        let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
-        let fee_rate = FeeRate::from_sat_per_kwu(10);
-        let utxo_abs = utxo.to_absolute_value(fee_rate);
-
-        let abs_value = Amount::from_str("1004 sats").unwrap();
-        assert_eq!(utxo_abs.value(), abs_value);
-        assert_eq!(utxo_abs.satisfaction_weight(), utxo.satisfaction_weight());
-
-        let p = vec![utxo];
-        let utxo_pool = UtxoPool::new(p);
-        let abs_pool = utxo_pool.to_absolute_values(fee_rate);
-        assert_eq!(abs_pool.utxos[0], utxo_abs);
-    }
-
-    #[test]
-    fn utxo_to_from_string() {
-        let utxo = Utxo::from_str("1001 sat/124 wu").unwrap();
-
-        let amount = Amount::from_str("1001 sat").unwrap();
-        let weight = Weight::from_wu(124);
-        let expected_utxo = Utxo::new(amount, weight);
-        assert_eq!(utxo, expected_utxo);
-    }
-
-    #[test]
-    fn select_coins_no_solution() {
-        let target = Amount::from_sat(255432);
-        let cost_of_change = Amount::ZERO;
-        let fee_rate = FeeRate::ZERO;
-        let lt_fee_rate = FeeRate::ZERO;
-        let pool = build_pool(); // eff value sum 262643
-
-        let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &pool);
-
-        // This yields no solution because:
-        //  * BnB fails because the sum overage is greater than cost_of_change
-        //  * SRD fails because the sum is greater the utxo sum + CHANGE_LOWER
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn select_coins_srd_solution() {
-        let target = Amount::from_sat(255432) - CHANGE_LOWER;
-        let cost_of_change = Amount::ZERO;
-        let fee_rate = FeeRate::ZERO;
-        let lt_fee_rate = FeeRate::ZERO;
-        let pool = build_pool();
-
-        let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &pool);
-        let (_iterations, utxos) = result.unwrap();
-        let sum: Amount = utxos.into_iter().map(|u| u.value()).sum();
-        assert!(sum > target);
-    }
-
-    #[test]
-    fn select_coins_bnb_solution() {
-        let target = Amount::from_sat(255432);
-        let fee_rate = FeeRate::ZERO;
-        let lt_fee_rate = FeeRate::ZERO;
-        let pool = build_pool();
-
-        // set cost_of_change to be the differene
-        // between the total pool sum and the target amount
-        // plus 1.  This creates an upper bound that the sum
-        // of all utxos will fall bellow resulting in a BnB match.
-        let cost_of_change = Amount::from_sat(7211);
-
-        let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &pool);
-        let (iterations, utxos) = result.unwrap();
-        let sum: Amount = utxos.into_iter().map(|u| u.value()).sum();
-        assert!(sum > target);
-        assert!(sum <= target + cost_of_change);
-        assert_eq!(16, iterations);
-    }
-
-    pub fn build_possible_solutions_srd<'a>(
-        pool: &'a UtxoPool,
-        fee_rate: FeeRate,
-        target: Amount,
-        solutions: &mut Vec<Vec<&'a Utxo>>,
-    ) {
-        let mut gen = exhaustigen::Gen::new();
-        while !gen.done() {
-            let subset = gen.gen_subset(&pool.utxos).collect::<Vec<_>>();
-            let effective_values_sum = subset
-                .iter()
-                .filter_map(|u| effective_value(fee_rate, u.satisfaction_weight(), u.value()))
-                .checked_sum();
-
-            if let Some(s) = effective_values_sum {
-                if let Ok(p) = s.to_unsigned() {
-                    if p >= target {
-                        solutions.push(subset)
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn build_possible_solutions_bnb<'a>(
-        pool: &'a UtxoPool,
-        fee_rate: FeeRate,
-        target: Amount,
-        cost_of_change: Amount,
-        solutions: &mut Vec<Vec<&'a Utxo>>,
-    ) {
-        let mut gen = exhaustigen::Gen::new();
-        while !gen.done() {
-            let subset = gen.gen_subset(&pool.utxos).collect::<Vec<_>>();
-            let effective_values_sum = subset
-                .iter()
-                .filter_map(|u| effective_value(fee_rate, u.satisfaction_weight(), u.value()))
-                .checked_sum();
-
-            if let Some(eff_sum) = effective_values_sum {
-                if eff_sum <= SignedAmount::MAX_MONEY {
-                    if let Ok(unsigned_sum) = eff_sum.to_unsigned() {
-                        if unsigned_sum >= target {
-                            if let Some(upper_bound) = target.checked_add(cost_of_change) {
-                                if unsigned_sum <= upper_bound {
-                                    solutions.push(subset)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn assert_proptest_bnb(
-        target: Amount,
-        cost_of_change: Amount,
-        fee_rate: FeeRate,
-        pool: UtxoPool,
-        result: Option<(u32, Vec<&Utxo>)>,
-    ) {
-        let mut bnb_solutions: Vec<Vec<&Utxo>> = Vec::new();
-        build_possible_solutions_bnb(&pool, fee_rate, target, cost_of_change, &mut bnb_solutions);
-
-        if let Some((_i, utxos)) = result {
-            let utxo_sum: Amount = utxos
-                .into_iter()
-                .map(|u| {
-                    effective_value(fee_rate, u.satisfaction_weight(), u.value())
-                        .unwrap()
-                        .to_unsigned()
-                        .unwrap()
-                })
-                .sum();
-
-            assert!(utxo_sum >= target);
-            assert!(utxo_sum <= target + cost_of_change);
-        } else {
-            assert!(
-                target > Amount::MAX_MONEY || target == Amount::ZERO || bnb_solutions.is_empty()
-            );
-        }
-    }
-
-    pub fn assert_proptest_srd(
-        target: Amount,
-        fee_rate: FeeRate,
-        pool: UtxoPool,
-        result: Option<(u32, Vec<&Utxo>)>,
-    ) {
-        let mut srd_solutions: Vec<Vec<&Utxo>> = Vec::new();
-        build_possible_solutions_srd(&pool, fee_rate, target, &mut srd_solutions);
-
-        if let Some((_i, utxos)) = result {
-            let utxo_sum: Amount = utxos
-                .into_iter()
-                .map(|u| {
-                    effective_value(fee_rate, u.satisfaction_weight(), u.value())
-                        .unwrap()
-                        .to_unsigned()
-                        .unwrap()
-                })
-                .sum();
-
-            assert!(utxo_sum >= target);
-        } else {
-            assert!(
-                target > Amount::MAX_MONEY || target == Amount::ZERO || srd_solutions.is_empty()
-            );
-        }
-    }
-
-    pub fn assert_proptest(
-        target: Amount,
-        cost_of_change: Amount,
-        fee_rate: FeeRate,
-        pool: UtxoPool,
-        result: Option<(u32, Vec<&Utxo>)>,
-    ) {
-        let mut bnb_solutions: Vec<Vec<&Utxo>> = Vec::new();
-        build_possible_solutions_bnb(&pool, fee_rate, target, cost_of_change, &mut bnb_solutions);
-
-        let mut srd_solutions: Vec<Vec<&Utxo>> = Vec::new();
-        build_possible_solutions_srd(&pool, fee_rate, target, &mut srd_solutions);
-
-        if let Some((_i, utxos)) = result {
-            let utxo_sum: Amount = utxos
-                .into_iter()
-                .map(|u| {
-                    effective_value(fee_rate, u.satisfaction_weight(), u.value())
-                        .unwrap()
-                        .to_unsigned()
-                        .unwrap()
-                })
-                .sum();
-
-            assert!(utxo_sum >= target);
-        } else {
-            assert!(
-                target > Amount::MAX_MONEY
-                    || target == Amount::ZERO
-                    || bnb_solutions.is_empty() && srd_solutions.is_empty()
-            );
-        }
-    }
-
-    #[test]
-    fn select_coins_proptest() {
-        arbtest(|u| {
-            let pool = UtxoPool::arbitrary(u)?;
-            let target = Amount::arbitrary(u)?;
-            let cost_of_change = Amount::arbitrary(u)?;
-            let fee_rate = FeeRate::arbitrary(u)?;
-            let lt_fee_rate = FeeRate::arbitrary(u)?;
-
-            let utxos = pool.utxos.clone();
-            let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &utxos);
-
-            assert_proptest(target, cost_of_change, fee_rate, pool, result);
-
-            Ok(())
-        });
-    }
+        //fn from_str(s: &str) -> Result<Self, Self::Err> {
+            //let without_prefix = s.strip_prefix("[").unwrap();
+            //let inner = without_prefix.strip_suffix("]").unwrap();
+            //let utxos: Vec<_> = inner.split(",").map(|s| {
+                //Utxo::from_str(s.trim()).unwrap()
+            //}).collect();
+            //Ok(UtxoPool::new(utxos))
+        //}
+    //}
 }

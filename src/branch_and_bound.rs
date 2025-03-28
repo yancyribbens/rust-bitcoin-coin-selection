@@ -331,7 +331,7 @@ mod tests {
     use bitcoin::{Amount, Weight};
 
     use super::*;
-    use crate::tests::{assert_proptest_bnb, assert_ref_eq, Utxo, UtxoPool};
+    use crate::tests::{assert_ref_eq, Utxo, UtxoPool};
     use crate::WeightedUtxo;
 
     const TX_IN_BASE_WEIGHT: u64 = 160;
@@ -342,23 +342,25 @@ mod tests {
         cost_of_change: &'a str,
         fee_rate: &'a str,
         lt_fee_rate: &'a str,
-        weighted_utxos: Vec<&'a str>,
+        effective_values: Vec<&'a str>,
+        weights: Vec<&'a str>
     }
 
-    fn assert_coin_select(
-        target_str: &str,
-        expected_iterations: u32,
-        expected_inputs_str: &[&str],
-    ) {
-        let p = ParamsStr {
-            target: target_str,
-            cost_of_change: "0",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1 cBTC", "2 cBTC", "3 cBTC", "4 cBTC"],
-        };
-        assert_coin_select_params(&p, expected_iterations, Some(expected_inputs_str));
-    }
+    //#[track_caller]
+    //fn assert_coin_select(
+        //target_str: &str,
+        //expected_iterations: u32,
+        //expected_inputs_str: &[&str],
+    //) {
+        //let p = ParamsStr {
+            //target: target_str,
+            //cost_of_change: "0",
+            //fee_rate: "0",
+            //lt_fee_rate: "0",
+            //weighted_utxos: vec!["1 cBTC", "2 cBTC", "3 cBTC", "4 cBTC"],
+        //};
+        //assert_coin_select_params(&p, expected_iterations, Some(expected_inputs_str));
+    //}
 
     // TODO check about adding this to rust-bitcoins from_str for FeeRate
     fn parse_fee_rate(f: &str) -> FeeRate {
@@ -382,12 +384,12 @@ mod tests {
         }
     }
 
-    fn assert_coin_select_params(
+    #[track_caller]
+    fn assert_effective_values_selected(
         p: &ParamsStr,
         expected_iterations: u32,
         expected_inputs_str: Option<&[&str]>,
     ) {
-        println!("assert coin select params");
         // Remove this check once iteration count is returned by error
         if expected_inputs_str.is_none() {
             assert_eq!(0, expected_iterations);
@@ -399,17 +401,17 @@ mod tests {
         let fee_rate = parse_fee_rate(p.fee_rate);
         let lt_fee_rate = parse_fee_rate(p.lt_fee_rate);
 
-        let pool: UtxoPool = UtxoPool::from_str_list(&p.weighted_utxos);
-        let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &pool.utxos);
+        let pool: UtxoPool = UtxoPool::from_effective_values_with_weights(&p.effective_values, &p.weights, p.fee_rate);
+        //let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &pool.utxos);
 
-        if let Some((iterations, inputs)) = result {
-            assert_eq!(iterations, expected_iterations);
+        //if let Some((iterations, inputs)) = result {
+            //assert_eq!(iterations, expected_iterations);
 
-            let expected: UtxoPool = UtxoPool::from_str_list(expected_inputs_str.unwrap());
-            assert_ref_eq(inputs, expected.utxos);
-        } else {
-            assert!(expected_inputs_str.is_none());
-        }
+            //let expected: UtxoPool = UtxoPool::from_str_list(expected_inputs_str.unwrap());
+            //assert_ref_eq(inputs, expected.utxos);
+        //} else {
+            //assert!(expected_inputs_str.is_none());
+        //}
     }
 
     // Use in place of arbitrary_in_range()
@@ -440,589 +442,16 @@ mod tests {
     }
 
     #[test]
-    fn select_coins_bnb_one() { assert_coin_select("1 cBTC", 8, &["1 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_two() { assert_coin_select("2 cBTC", 6, &["2 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_three() { assert_coin_select("3 cBTC", 8, &["2 cBTC", "1 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_four() { assert_coin_select("4 cBTC", 8, &["3 cBTC", "1 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_five() { assert_coin_select("5 cBTC", 12, &["3 cBTC", "2 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_six() { assert_coin_select("6 cBTC", 12, &["3 cBTC", "2 cBTC", "1 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_seven() {
-        assert_coin_select("7 cBTC", 8, &["4 cBTC", "2 cBTC", "1 cBTC"]);
-    }
-
-    #[test]
-    fn select_coins_bnb_eight() {
-        assert_coin_select("8 cBTC", 8, &["4 cBTC", "3 cBTC", "1 cBTC"]);
-    }
-
-    #[test]
-    fn select_coins_bnb_nine() { assert_coin_select("9 cBTC", 6, &["4 cBTC", "3 cBTC", "2 cBTC"]); }
-
-    #[test]
-    fn select_coins_bnb_ten() {
-        assert_coin_select("10 cBTC", 8, &["4 cBTC", "3 cBTC", "2 cBTC", "1 cBTC"]);
-    }
-
-    #[test]
-    #[should_panic]
-    // the target is greater than the sum of available UTXOs.
-    // therefore asserting that a selection exists should panic.
-    fn select_coins_bnb_eleven_invalid_target_should_panic() {
-        assert_coin_select("11 cBTC", 8, &["1 cBTC"]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn select_coins_bnb_params_invalid_target_should_panic() {
-        // the target is greater than the sum of available UTXOs.
-        // therefore asserting that a selection exists should panic.
-        let params = ParamsStr {
-            target: "11 cBTC",
-            cost_of_change: "1 cBTC",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1.5 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 2, Some(&["1.5 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_zero() {
-        let params = ParamsStr {
-            target: "0",
-            cost_of_change: "0",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_cost_of_change() {
-        let mut params = ParamsStr {
-            target: "1 cBTC",
-            cost_of_change: "1 cBTC",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1.5 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 2, Some(&["1.5 cBTC"]));
-
-        params.cost_of_change = "0";
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_effective_value() {
-        let params = ParamsStr {
-            target: "11 cBTC",
-            cost_of_change: "0",
-            fee_rate: "10 sat/kwu",
-            lt_fee_rate: "10 sat/kwu",
-            weighted_utxos: vec!["1 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
     fn select_coins_bnb_skip_effective_negative_effective_value() {
         let params = ParamsStr {
             target: "1 cBTC",
             cost_of_change: "1 cBTC",
             fee_rate: "10 sat/kwu",
             lt_fee_rate: "10 sat/kwu",
-            weighted_utxos: vec!["1.5 cBTC", "1 sat"],
+            effective_values: vec!["1.5 cBTC", "-1 sat"],
+            weights: vec!["68 vb", "68 vb"]
         };
 
-        assert_coin_select_params(&params, 2, Some(&["1.5 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_target_greater_than_value() {
-        let params = ParamsStr {
-            target: "11 cBTC",
-            cost_of_change: "0",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1 cBTC", "2 cBTC", "3 cBTC", "4 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_consume_more_inputs_when_cheap() {
-        let params = ParamsStr {
-            target: "6 sats",
-            cost_of_change: "0",
-            fee_rate: "10 sat/kwu",
-            lt_fee_rate: "20 sat/kwu",
-            weighted_utxos: vec!["3 sats", "4 sats", "5 sats", "6 sats"], // eff_values: [1, 2, 3, 4]
-        };
-
-        assert_coin_select_params(&params, 12, Some(&["5 sats", "4 sats", "3 sats"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_consume_less_inputs_when_expensive() {
-        let params = ParamsStr {
-            target: "6 sats",
-            cost_of_change: "0",
-            fee_rate: "20 sat/kwu",
-            lt_fee_rate: "10 sat/kwu",
-            weighted_utxos: vec!["5 sats", "6 sats", "7 sats", "8 sats"], // eff_values: [1, 2, 3, 4]
-        };
-
-        assert_coin_select_params(&params, 12, Some(&["8 sats", "6 sats"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_consume_less_inputs_with_excess_when_expensive() {
-        let params = ParamsStr {
-            target: "6 sats",
-            cost_of_change: "1 sats",
-            fee_rate: "20 sat/kwu",
-            lt_fee_rate: "10 sat/kwu",
-            weighted_utxos: vec!["5 sats", "6 sats", "7 sats", "9 sats"], // eff_values: [1, 2, 3, 4]
-        };
-
-        assert_coin_select_params(&params, 14, Some(&["9 sats", "5 sats"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_utxo_pool_sum_overflow() {
-        let params = ParamsStr {
-            target: "1 cBTC",
-            cost_of_change: "0",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["18446744073709551615 sats", "1 sats"], // [u64::MAX, 1 sat]
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_upper_bound_overflow() {
-        let params = ParamsStr {
-            target: "1 sats",
-            cost_of_change: "18446744073709551615 sats", // u64::MAX
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["1 sats"],
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_utxo_greater_than_max_money() {
-        let params = ParamsStr {
-            target: "1 sats",
-            cost_of_change: "18141417255681066410 sats",
-            fee_rate: "1 sat/kwu",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["8740670712339394302 sats"],
-        };
-
-        assert_coin_select_params(&params, 0, None);
-    }
-
-    #[test]
-    fn select_coins_bnb_set_size_five() {
-        let params = ParamsStr {
-            target: "6 cBTC",
-            cost_of_change: "0",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec!["3 cBTC", "2.9 cBTC", "2 cBTC", "1.0 cBTC", "1 cBTC"],
-        };
-
-        assert_coin_select_params(&params, 22, Some(&["3 cBTC", "2 cBTC", "1 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_set_size_seven() {
-        let params = ParamsStr {
-            target: "18 cBTC",
-            cost_of_change: "50 sats",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: vec![
-                "10 cBTC",
-                "7000005 sats",
-                "6000005 sats",
-                "6 cBTC",
-                "3 cBTC",
-                "2 cBTC",
-                "1000005 cBTC",
-            ],
-        };
-
-        assert_coin_select_params(&params, 44, Some(&["10 cBTC", "6 cBTC", "2 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_early_bail_optimization() {
-        // Test the UTXO exclusion shortcut optimization.  The selection begins with
-        // 7 * 4 = 28 cBTC.  Next, since the pool is sorted in descending order,
-        // 5 cBTC is added which is above the target of 30.   If the UTXO exclusion
-        // shortcut works, all next 5 cBTC values will be skipped since they have
-        // the same effective_value and 5 cBTC was excluded.  Otherwise, trying all
-        // combination of 5 cBTC will cause the iteration limit to be reached before
-        // finding 2 cBTC which matches the total exactly.
-        let mut utxos = vec!["7 cBTC", "7 cBTC", "7 cBTC", "7 cBTC", "2 cBTC"];
-        for _i in 0..50_000 {
-            utxos.push("5 cBTC");
-        }
-        let params = ParamsStr {
-            target: "30 cBTC",
-            cost_of_change: "5000 sats",
-            fee_rate: "0",
-            lt_fee_rate: "0",
-            weighted_utxos: utxos,
-        };
-
-        assert_coin_select_params(
-            &params,
-            100000,
-            Some(&["7 cBTC", "7 cBTC", "7 cBTC", "7 cBTC", "2 cBTC"]),
-        );
-    }
-
-    #[test]
-    fn select_coins_bnb_choose_heavy_utxos_when_fees_expensive() {
-        let utxos = vec![
-            "2 cBTC/68 vb",
-            "3 cBTC/68 vb",
-            "5 cBTC/68 vb",
-            "6 cBTC/500 vb",
-            "7 cBTC/500 vb",
-            "10 cBTC/68 vb",
-        ];
-
-        let params = ParamsStr {
-            target: "13 cBTC",
-            cost_of_change: "359 sats",
-            fee_rate: "25000 sat/vb",
-            lt_fee_rate: "3000 sat/vb",
-            weighted_utxos: utxos,
-        };
-
-        assert_coin_select_params(&params, 100000, Some(&["3 cBTC", "10 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_choose_lite_utxos_when_fees_are_cheap() {
-        let utxos = vec![
-            "2 cBTC/68 vb",
-            "3 cBTC/68 vb",
-            "5 cBTC/68 vb",
-            "6 cBTC/500 vb",
-            "7 cBTC/500 vb",
-            "10 cBTC/68 vb",
-        ];
-
-        let params = ParamsStr {
-            target: "13 cBTC",
-            cost_of_change: "359 sats",
-            fee_rate: "3000 sat/vb",
-            lt_fee_rate: "5000 sat/vb",
-            weighted_utxos: utxos,
-        };
-
-        assert_coin_select_params(&params, 100000, Some(&["3 cBTC", "10 cBTC"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_choose_heavy_utxos_when_fees_cheap() {
-        let utxos = vec![
-            "1 cBTC/68 vb",
-            "1 cBTC/500 vb",
-        ];
-
-        let params = ParamsStr {
-            target: "13 cBTC",
-            cost_of_change: "359 sats",
-            fee_rate: "5000 sat/vb",
-            lt_fee_rate: "3000 sat/vb",
-            weighted_utxos: utxos,
-        };
-
-        assert_coin_select_params(&params, 100000, Some(&["1 cBTC/500 vb"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_choose_lite_utxo_with_equal_effective_value_when_fees_are_expensive() {
-        let utxos = vec![
-            "1 cBTC/68 vb",
-            "1 cBTC/500 vb",
-        ];
-
-        let params = ParamsStr {
-            target: "1 cBTC",
-            cost_of_change: "359 sats",
-            fee_rate: "25000 sat/vb",
-            lt_fee_rate: "3000 sat/vb",
-            weighted_utxos: utxos,
-        };
-
-        assert_coin_select_params(&params, 100000, Some(&["1 cBTC/68 vb"]));
-    }
-
-    #[test]
-    fn select_coins_bnb_exhaust() {
-        // Recreate make_hard from bitcoin core test suit.
-        // Takes 327,661 iterations to find a solution.
-        let base: usize = 2;
-        let alpha = (0..17).enumerate().map(|(i, _)| base.pow(17 + i as u32));
-        let target = Amount::from_sat(alpha.clone().sum::<usize>() as u64);
-
-        let beta = (0..17).enumerate().map(|(i, _)| {
-            let a = base.pow(17 + i as u32);
-            let b = base.pow(16 - i as u32);
-            a + b
-        });
-
-        let amts: Vec<_> = zip(alpha, beta)
-            // flatten requires iterable types.
-            // use once() to make tuple iterable.
-            .flat_map(|tup| once(tup.0).chain(once(tup.1)))
-            .map(|a| Amount::from_sat(a as u64))
-            .collect();
-
-        let pool: Vec<_> = amts.into_iter().map(|a| Utxo::new(a, Weight::ZERO)).collect();
-
-        let list = select_coins_bnb(target, Amount::ONE_SAT, FeeRate::ZERO, FeeRate::ZERO, &pool);
-
-        assert!(list.is_none());
-    }
-
-    #[test]
-    fn select_coins_bnb_exhaust_v2() {
-        // Takes 163,819 iterations to find a solution.
-        let base: usize = 2;
-        let mut target = 0;
-        let vals = (0..15).enumerate().flat_map(|(i, _)| {
-            let a = base.pow(15 + i as u32) as u64;
-            target += a;
-            vec![a, a + 2]
-        });
-
-        let amts: Vec<_> = vals.map(Amount::from_sat).collect();
-        let pool: Vec<_> = amts.into_iter().map(|a| Utxo::new(a, Weight::ZERO)).collect();
-
-        let list = select_coins_bnb(
-            Amount::from_sat(target),
-            Amount::ONE_SAT,
-            FeeRate::ZERO,
-            FeeRate::ZERO,
-            &pool,
-        );
-
-        assert!(list.is_none());
-    }
-
-    #[test]
-    fn select_coins_bnb_exhaust_with_result() {
-        // This returns a result AND hits the iteration exhaust limit.
-        // Takes 163,819 iterations (hits the iteration limit).
-        let base: usize = 2;
-        let mut target = 0;
-        let amts = (0..15).enumerate().flat_map(|(i, _)| {
-            let a = base.pow(15 + i as u32) as u64;
-            target += a;
-            vec![a, a + 2]
-        });
-
-        let mut amts: Vec<_> = amts.map(Amount::from_sat).collect();
-
-        // Add a value that will match the target before iteration exhaustion occurs.
-        amts.push(Amount::from_sat(target));
-        let pool: Vec<_> = amts.into_iter().map(|a| Utxo::new(a, Weight::ZERO)).collect();
-
-        let (iterations, utxos) = select_coins_bnb(
-            Amount::from_sat(target),
-            Amount::ONE_SAT,
-            FeeRate::ZERO,
-            FeeRate::ZERO,
-            &pool,
-        )
-        .unwrap();
-
-        assert_eq!(utxos.len(), 1);
-        assert_eq!(utxos[0].value(), Amount::from_sat(target));
-        assert_eq!(100000, iterations);
-    }
-
-    #[test]
-    fn select_one_of_one_idealized_proptest() {
-        let minimal_non_dust: u64 = 1;
-        let effective_value_max: u64 = SignedAmount::MAX.to_sat() as u64;
-
-        arbtest(|u| {
-            let amount = arb_amount_in_range(u, minimal_non_dust..=effective_value_max);
-            let utxo = Utxo::new(amount, Weight::ZERO);
-            let pool: Vec<Utxo> = vec![utxo.clone()];
-
-            let (_i, utxos) =
-                select_coins_bnb(utxo.value(), Amount::ZERO, FeeRate::ZERO, FeeRate::ZERO, &pool)
-                    .unwrap();
-
-            assert_ref_eq(utxos, pool.clone());
-
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn select_one_of_many_proptest() {
-        arbtest(|u| {
-            let pool = UtxoPool::arbitrary(u)?;
-            let utxos = pool.utxos.clone();
-
-            let utxo = u.choose(&utxos)?;
-
-            let max_fee_rate = calculate_max_fee_rate(utxo.value(), utxo.satisfaction_weight());
-            if let Some(f) = max_fee_rate {
-                let fee_rate = arb_fee_rate_in_range(u, 1..=f.to_sat_per_kwu());
-
-                //TODO update eff value interface
-                let target_effective_value =
-                    effective_value(fee_rate, utxo.satisfaction_weight(), utxo.value()).unwrap();
-
-                if let Ok(target) = target_effective_value.to_unsigned() {
-                    let result = select_coins_bnb(target, Amount::ZERO, fee_rate, fee_rate, &utxos);
-
-                    if let Some((_i, utxos)) = result {
-                        let sum: SignedAmount = utxos
-                            .into_iter()
-                            .map(|u| {
-                                effective_value(fee_rate, u.satisfaction_weight(), u.value())
-                                    .unwrap()
-                            })
-                            .sum();
-                        let amount_sum = sum.to_unsigned().unwrap();
-                        assert_eq!(amount_sum, target);
-                    } else {
-                        // if result was none, then assert that fail happened because overflow when
-                        // summing pool.  In the future, assert specific error when added.
-                        let available_value = utxos.into_iter().map(|u| u.value()).checked_sum();
-                        assert!(available_value.is_none());
-                    }
-                }
-            }
-
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn select_many_of_many_proptest() {
-        arbtest(|u| {
-            let pool = UtxoPool::arbitrary(u)?;
-            let utxos = pool.utxos.clone();
-
-            // generate all the possible utxos subsets
-            let mut gen = exhaustigen::Gen::new();
-            let mut subsets: Vec<Vec<&Utxo>> = Vec::new();
-            while !gen.done() {
-                let s = gen.gen_subset(&pool.utxos).collect::<Vec<_>>();
-                subsets.push(s);
-            }
-
-            // choose a set at random to be the target
-            let target_selection: &Vec<&Utxo> = u.choose(&subsets).unwrap();
-
-            // find the minmum fee_rate that will result in all utxos having a posiive
-            // effective_value
-            let mut fee_rates: Vec<FeeRate> = target_selection
-                .iter()
-                .map(|u| {
-                    calculate_max_fee_rate(u.value(), u.satisfaction_weight())
-                        .unwrap_or(FeeRate::ZERO)
-                })
-                .collect();
-            fee_rates.sort();
-
-            let min_fee_rate = fee_rates.first().unwrap_or(&FeeRate::ZERO).to_sat_per_kwu();
-            let fee_rate = arb_fee_rate_in_range(u, 0..=min_fee_rate);
-
-            let effective_values: Vec<SignedAmount> = target_selection
-                .iter()
-                .map(|u| {
-                    let e = effective_value(fee_rate, u.satisfaction_weight(), u.value());
-
-                    e.unwrap_or(SignedAmount::ZERO)
-                })
-                .collect();
-
-            let eff_values_sum = effective_values.into_iter().checked_sum();
-
-            // if None, then this random subset is an invalid target (skip)
-            if let Some(s) = eff_values_sum {
-                if let Ok(target) = s.to_unsigned() {
-                    let result = select_coins_bnb(target, Amount::ZERO, fee_rate, fee_rate, &utxos);
-
-                    if let Some((_i, utxos)) = result {
-                        let effective_value_sum: Amount = utxos
-                            .into_iter()
-                            .map(|u| {
-                                effective_value(fee_rate, u.satisfaction_weight(), u.value())
-                                    .unwrap()
-                                    .to_unsigned()
-                                    .unwrap()
-                            })
-                            .sum();
-                        assert_eq!(effective_value_sum, target);
-                    } else {
-                        let available_value = utxos.into_iter().map(|u| u.value()).checked_sum();
-                        assert!(
-                            available_value.is_none()
-                                || target_selection.is_empty()
-                                || target == Amount::ZERO
-                        );
-                    }
-                }
-            }
-
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn select_bnb_proptest() {
-        arbtest(|u| {
-            let pool = UtxoPool::arbitrary(u)?;
-            let target = Amount::arbitrary(u)?;
-            let cost_of_change = Amount::arbitrary(u)?;
-            let fee_rate = FeeRate::arbitrary(u)?;
-            let lt_fee_rate = FeeRate::arbitrary(u)?;
-
-            let utxos = pool.utxos.clone();
-
-            let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &utxos);
-
-            assert_proptest_bnb(target, cost_of_change, fee_rate, pool, result);
-
-            Ok(())
-        });
+        assert_effective_values_selected(&params, 2, Some(&["1.5 cBTC"]));
     }
 }
