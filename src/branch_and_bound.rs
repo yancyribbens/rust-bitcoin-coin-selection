@@ -343,7 +343,10 @@ mod tests {
         fee_rate: &'a str,
         lt_fee_rate: &'a str,
         effective_values: Vec<&'a str>,
-        weights: Vec<&'a str>
+        weights: Vec<&'a str>,
+        expected_effective_values: Option<Vec<&'a str>>,
+        expected_weights: Vec<&'a str>,
+        expected_iterations: u32,
     }
 
     //#[track_caller]
@@ -387,31 +390,27 @@ mod tests {
     #[track_caller]
     fn assert_effective_values_selected(
         p: &ParamsStr,
-        expected_iterations: u32,
-        expected_inputs_str: Option<&[&str]>,
     ) {
-        // Remove this check once iteration count is returned by error
-        if expected_inputs_str.is_none() {
-            assert_eq!(0, expected_iterations);
-        }
-
         let target = Amount::from_str(p.target).unwrap();
         let cost_of_change = Amount::from_str(p.cost_of_change).unwrap();
 
         let fee_rate = parse_fee_rate(p.fee_rate);
         let lt_fee_rate = parse_fee_rate(p.lt_fee_rate);
 
-        let pool: UtxoPool = UtxoPool::from_effective_values_with_weights(&p.effective_values, &p.weights, p.fee_rate);
-        //let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &pool.utxos);
+        let pool: UtxoPool = UtxoPool::from_effective_values_with_weights(&p.effective_values, &p.weights, fee_rate);
+        let result = select_coins_bnb(target, cost_of_change, fee_rate, lt_fee_rate, &pool.utxos);
 
-        //if let Some((iterations, inputs)) = result {
-            //assert_eq!(iterations, expected_iterations);
+        if let Some((iterations, inputs)) = result {
+            assert_eq!(iterations, p.expected_iterations);
 
-            //let expected: UtxoPool = UtxoPool::from_str_list(expected_inputs_str.unwrap());
-            //assert_ref_eq(inputs, expected.utxos);
-        //} else {
-            //assert!(expected_inputs_str.is_none());
-        //}
+            let expected_effective_values = p.expected_effective_values.clone().unwrap();
+            let expected: UtxoPool = UtxoPool::from_effective_values_with_weights(&expected_effective_values, &p.expected_weights, fee_rate);
+            assert_ref_eq(inputs, expected.utxos);
+        } else {
+            assert!(&p.expected_effective_values.is_none());
+            // Remove this check once iteration count is returned by error
+            assert_eq!(p.expected_iterations, 0);
+        }
     }
 
     // Use in place of arbitrary_in_range()
@@ -449,9 +448,12 @@ mod tests {
             fee_rate: "10 sat/kwu",
             lt_fee_rate: "10 sat/kwu",
             effective_values: vec!["1.5 cBTC", "-1 sat"],
-            weights: vec!["68 vb", "68 vb"]
+            weights: vec!["68 vb", "68 vb"],
+            expected_effective_values: Some(vec!["1.5 cBTC"]),
+            expected_weights: vec!["68 vb"],
+            expected_iterations: 2,
         };
 
-        assert_effective_values_selected(&params, 2, Some(&["1.5 cBTC"]));
+        assert_effective_values_selected(&params);
     }
 }

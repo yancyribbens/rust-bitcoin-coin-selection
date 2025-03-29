@@ -224,11 +224,8 @@ mod tests {
             }
     }
 
-
     impl UtxoPool {
-        pub fn from_effective_values_with_weights(effective_values: &[&str], weights: &[&str], fee_rate: &str) -> UtxoPool {
-            let fee_rate = parse_fee_rate(fee_rate);
-
+        pub fn from_effective_values_with_weights(effective_values: &[&str], weights: &[&str], fee_rate: FeeRate) -> UtxoPool {
             use std::iter::zip;
             assert_eq!(effective_values.len(), weights.len());
             let utxos: Vec<_> = zip(effective_values, weights)
@@ -295,7 +292,7 @@ mod tests {
                     //let size_parts: Vec<_> = size.split(" ").collect();
                     //let size_int = size_parts[0].parse::<u64>().unwrap();
 
-                    // TODO check about adding this to rust-bitcoins from_str for Weight
+                     //TODO check about adding this to rust-bitcoins from_str for Weight
                     //weight = match size_parts[1] {
                         //"wu" => Weight::from_wu(size_int),
                         //"vb" => Weight::from_vb(size_int).unwrap(),
@@ -309,7 +306,7 @@ mod tests {
                 //_ => panic!(), //TODO return error
             //}
 
-            // compute absolue value
+             //compute absolue value
             //Ok(Utxo::new(amt, weight))
         //}
     //}
