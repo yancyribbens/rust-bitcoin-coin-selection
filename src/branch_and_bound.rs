@@ -186,8 +186,8 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         .map(|(eff_val, waste, wu)| (eff_val.to_unsigned().unwrap(), waste, wu))
         .collect();
 
-    w_utxos.sort_by_key(|u| u.0);
-    w_utxos.reverse();
+    // descending sort by effective_value using satisfaction weight as tie breaker.
+    w_utxos.sort_by(|a, b| b.0.cmp(&a.0).then(b.2.satisfaction_weight().cmp(&a.2.satisfaction_weight())));
 
     let mut available_value = w_utxos.clone().into_iter().map(|(ev, _, _)| ev).checked_sum()?;
 
@@ -623,6 +623,21 @@ mod tests {
             expected_iterations: 12,
         }
         .assert();
+    }
+
+    #[test]
+    fn select_coins_bnb_choose_lower_weight_when_effective_value_ties() {
+       // p2wpkh weight = 272 wu
+       // p2tr weight = 230 wu
+        TestBnB {
+            target: "100 sats",
+            cost_of_change: "10 sats",
+            fee_rate: "10 sat/kwu",
+            lt_fee_rate: "10 sat/kwu",
+            weighted_utxos: &["e(50 sats)/272 wu", "e(50 sats)/272 wu", "e(50 sats)/230 wu"],
+            expected_utxos: Some(&["e(50 sats)/272 wu", "e(50 sats)/230 wu"]),
+            expected_iterations: 9,
+        }.assert();
     }
 
     #[test]
