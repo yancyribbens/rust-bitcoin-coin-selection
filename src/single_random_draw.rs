@@ -6,6 +6,7 @@
 
 use bitcoin::{Amount, FeeRate};
 use rand::seq::SliceRandom;
+use bitcoin_units::amount::NumOpResult;
 
 use crate::{Return, WeightedUtxo, CHANGE_LOWER};
 
@@ -60,7 +61,6 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
             if let Ok(v) = e.to_unsigned() {
                 // TODO validate utxo pool does not sum to exceed MAX_MONEY
                 value = (value + v).unwrap(); // Cannot overflow.
-
                 result.push(w_utxo);
 
                 if value >= threshold {
