@@ -48,7 +48,7 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
 
     result.clear();
 
-    let threshold = target + CHANGE_LOWER;
+    let threshold = target.checked_add(CHANGE_LOWER)?;
     let mut value = Amount::ZERO;
 
     let mut iteration = 0;
@@ -58,7 +58,8 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
 
         if let Some(e) = effective_value {
             if let Ok(v) = e.to_unsigned() {
-                value += v;
+                // TODO validate utxo pool does not sum to exceed MAX_MONEY
+                value = (value + v).unwrap(); // Cannot overflow.
 
                 result.push(w_utxo);
 
