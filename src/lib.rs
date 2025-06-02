@@ -185,7 +185,7 @@ mod tests {
                 "sat/kwu" => FeeRate::from_sat_per_kwu(rate),
                 "sat/vB" => FeeRate::from_sat_per_vb(rate).unwrap(),
                 "0" => FeeRate::ZERO,
-                _ => panic!("only support sat/kwu or sat/vB rates"),
+                _ => panic!("only support sat/kwu or sat/vb rates: {:?}", rate_parts[1]),
             },
 
             _ => panic!("number, space then rate not parsed.  example: 10 sat/kwu"),
