@@ -148,8 +148,6 @@ pub fn select_coins<Utxo: WeightedUtxo>(
     let weight_sum =
         weighted_utxos.iter().map(|u| u.weight()).try_fold(Weight::ZERO, Weight::checked_add);
     if weight_sum.is_none() {
-        return None;
-    }
 
     let mut w_utxos = calc_effective_values::<Utxo>(weighted_utxos, fee_rate);
 
@@ -231,7 +229,11 @@ pub fn select_coins<Utxo: WeightedUtxo>(
         let (eff_value, u) = w_utxos[next_utxo_index];
 
         amount_total += eff_value;
+<<<<<<< HEAD
         weight_total += u.weight();
+=======
+        weight_total = weight_total + u.weight();
+>>>>>>> e7ba00c (wip)
 
         selection.push(next_utxo_index);
         next_utxo_index += 1;

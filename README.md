@@ -22,6 +22,7 @@ To run fuzz tests, install [cargo fuzz](https://crates.io/crates/cargo-fuzz).
 The following fuzz tests can then be run:
 ```
 > cargo fuzz run select_coins_srd
+> cargo fuzz run select_coins_coin_grinder 
 > cargo fuzz run select_coins_bnb
 > cargo fuzz run select_coins
 ```
