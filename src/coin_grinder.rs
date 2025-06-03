@@ -163,7 +163,7 @@ pub fn select_coins<Utxo: WeightedUtxo>(
 
     let total_target = target.checked_add(change_target)?;
 
-    if available_value < total_target {
+    if available_value < total_target || available_value == Amount::ZERO {
         return None;
     }
 
@@ -619,4 +619,19 @@ mod tests {
         }
         .assert();
     }
+
+    #[test]
+    fn no_availalbe_value() {
+        TestCoinGrinder {
+            target: "0",        //u64::MAX
+            change_target: "0", //u64::MAX
+            max_weight: "0",
+            fee_rate: "0",
+            weighted_utxos: &[],
+            expected_utxos: None,
+            expected_iterations: 0,
+        }
+        .assert();
+    }
+
 }
