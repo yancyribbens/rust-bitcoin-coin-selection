@@ -630,4 +630,84 @@ mod tests {
         }
         .assert();
     }
+
+    // Calculate the maximum fee_Rate that would make the corresponding Utxo have a non-negative
+    // effective value.  Remember, the effective_value is calculated as value - (fee_rate *
+    // weight).  Therefore, if fee_rate * weight is larger than value, the effective value becomes
+    // negative and the Utxo will be discarded during selection.
+    fn calculate_max_fee_rate(amount: Amount, weight: Weight) -> FeeRate {
+        let mut result = FeeRate::ZERO;
+
+        if let Some(fee_rate) = amount.checked_div_by_weight_floor(weight) {
+            if fee_rate > FeeRate::ZERO {
+                result = fee_rate
+            }
+        };
+
+        result
+    }
+
+    // Use in place of arbitrary_in_range()
+    // see: https://github.com/rust-fuzz/arbitrary/pull/192
+    fn arb_fee_rate_in_range(u: &mut Unstructured, r: std::ops::RangeInclusive<u64>) -> FeeRate {
+        let u = u.int_in_range::<u64>(r).unwrap();
+        FeeRate::from_sat_per_kwu(u)
+    }
+
+    // Use in place of arbitrary_in_range()
+    // see: https://github.com/rust-fuzz/arbitrary/pull/192
+    fn arb_weight_in_range(u: &mut Unstructured, r: std::ops::RangeInclusive<u64>) -> Weight {
+        let u = u.int_in_range::<u64>(r).unwrap();
+        Weight::from_wu(u)
+    }
+
+    use arbtest::arbtest;
+    use arbitrary::Arbitrary;
+    use arbitrary::Unstructured;
+    use bitcoin::transaction::effective_value;
+
+    #[test]
+    fn select_one_of_many_coin_griner_proptest() {
+        arbtest(|u| {
+            let pool = UtxoPool::arbitrary(u)?;
+
+            let mut utxos = pool.utxos.clone();
+            utxos.sort_by_key(|k| k.weight());
+            let utxo = utxos[0].clone();
+
+            let max_fee_rate = calculate_max_fee_rate(utxo.value(), utxo.weight());
+            let fee_rate = arb_fee_rate_in_range(u, 0..=max_fee_rate.to_sat_per_kwu());
+            let change_target = Amount::arbitrary(u).unwrap();
+            let max_selection_weight = arb_weight_in_range(u, 0..=utxo.weight().to_wu());
+
+            if let Some(eff_value) = effective_value(fee_rate, utxo.weight(), utxo.value()) {
+                let target = eff_value.to_unsigned().unwrap();
+                let result = select_coins(target, change_target, max_selection_weight, fee_rate, &pool.utxos);
+
+                //if let Some((_i, utxos)) = result {
+                    //let sum: SignedAmount = utxos
+                        //.clone()
+                        //.into_iter()
+                        //.map(|u| effective_value(fee_rate, u.weight(), u.value()).unwrap())
+                        //.sum();
+                    //let amount_sum = sum.to_unsigned().unwrap();
+                    //assert_eq!(amount_sum, target);
+
+                    // TODO add checked_sum to Weight
+                    //let weight_sum = utxos
+                        //.iter()
+                        //.try_fold(Weight::ZERO, |acc, itm| acc.checked_add(itm.weight()));
+
+                    //assert!(weight_sum.unwrap() <= utxo.weight());
+                //} else {
+                    // if result was none, then assert that fail happened because overflow when
+                    // summing pool.  In the future, assert specific error when added.
+                    //let available_value = utxos.into_iter().map(|u| u.value()).checked_sum();
+                    //assert!(available_value.is_none());
+                //}
+            }
+
+            Ok(())
+        });
+    }
 }
