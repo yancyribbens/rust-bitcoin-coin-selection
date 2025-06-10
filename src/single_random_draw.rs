@@ -19,19 +19,9 @@ use crate::{Return, WeightedUtxo, CHANGE_LOWER};
 /// * `weighted_utxos` - Weighted UTXOs from which to sum the target amount.
 /// * `rng` - used primarily by tests to make the selection deterministic.
 ///
-/// # Returns
+/// # Errors
 ///
-/// * `Some((u32, Vec<WeightedUtxo>))` where `Vec<WeightedUtxo>` is empty on no matches found.
-///   An empty vec signifies that all possibilities where explored successfully and no match
-///   could be found with the given parameters.  The first element of the tuple is a u32 which
-///   represents the number of iterations needed to find a solution.
-/// * `None` un-expected results OR no match found.  A future implementation may add Error types
-///   which will differentiate between an unexpected error and no match found.  Currently, a None
-///   type occurs when one or more of the following criteria are met:
-///     - Overflow when summing available UTXOs
-///     - Not enough potential amount to meet the target
-///     - Target Amount is zero (no match possible)
-///     - Search was successful yet no match found
+/// * Unrecoverable Arithmetic Overflow
 pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
     target: Amount,
     fee_rate: FeeRate,
@@ -39,14 +29,18 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
     rng: &mut R,
 ) -> Return<'a, Utxo> {
     // utxo sum cannot exceed Amount::MAX
-    let _ = weighted_utxos.iter().map(|u| u.value()).checked_sum()?;
+    let sum = weighted_utxos.iter().map(|u| u.value()).checked_sum();
+    if sum.is_none() {
+        return Ok((0, vec![]));
+    }
+
     let mut result: Vec<_> = weighted_utxos.iter().collect();
     let mut origin = result.to_owned();
     origin.shuffle(rng);
 
     result.clear();
 
-    let threshold = target.checked_add(CHANGE_LOWER)?;
+    let threshold = target.checked_add(CHANGE_LOWER).ok_or(crate::OverflowError::Addition)?;
     let mut value = Amount::ZERO;
 
     let mut iteration = 0;
@@ -61,13 +55,13 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
                 result.push(w_utxo);
 
                 if value >= threshold {
-                    return Some((iteration, result));
+                    return Ok((iteration, result));
                 }
             }
         }
     }
 
-    None
+    Ok((iteration, vec![]))
 }
 
 #[cfg(test)]
@@ -88,7 +82,7 @@ mod tests {
         target: &'a str,
         fee_rate: &'a str,
         weighted_utxos: &'a [&'a str],
-        expected_utxos: Option<&'a [&'a str]>,
+        expected_utxos: &'a [&'a str],
         expected_iterations: u32,
     }
 
@@ -101,15 +95,15 @@ mod tests {
 
             let result = select_coins_srd(target, fee_rate, &pool.utxos, &mut get_rng());
 
-            if let Some((iterations, inputs)) = result {
+            if let Ok((iterations, inputs)) = result {
                 assert_eq!(iterations, self.expected_iterations);
 
-                let expected_selection = self.expected_utxos.unwrap();
-                let expected: UtxoPool = UtxoPool::new(expected_selection, fee_rate);
+                //let expected_selection = self.expected_utxos.unwrap();
+                let expected: UtxoPool = UtxoPool::new(self.expected_utxos, fee_rate);
 
                 assert_ref_eq(inputs, expected.utxos);
             } else {
-                assert!(self.expected_utxos.is_none());
+                assert!(self.expected_utxos.is_empty());
                 // Remove this check once iteration count is returned by error
                 assert_eq!(self.expected_iterations, 0);
             }
@@ -121,7 +115,7 @@ mod tests {
             target: target_str,
             fee_rate: "10 sat/kwu",
             weighted_utxos: &["1 cBTC/204 wu", "2 cBTC/204 wu"],
-            expected_utxos: Some(expected_utxos),
+            expected_utxos,
             expected_iterations,
         }
         .assert();
@@ -166,7 +160,7 @@ mod tests {
             target: "11 cBTC",
             fee_rate: "0",
             weighted_utxos: &["1.5 cBTC"],
-            expected_utxos: Some(&["1.5 cBTC"]),
+            expected_utxos: &["1.5 cBTC"],
             expected_iterations: 2,
         }
         .assert();
@@ -178,8 +172,8 @@ mod tests {
             target: "4 cBTC",
             fee_rate: "0",
             weighted_utxos: &["1 cBTC/68 vB", "2 cBTC/68 vB"],
-            expected_utxos: None,
-            expected_iterations: 0,
+            expected_utxos: &[],
+            expected_iterations: 2,
         }
         .assert();
     }
@@ -193,7 +187,7 @@ mod tests {
             target: "1.95 cBTC", // 2 cBTC - CHANGE_LOWER
             fee_rate: "10 sat/kwu",
             weighted_utxos: &["1 cBTC/68 vB", "2 cBTC/68 vB", "e(-1 sat)/68 vB"],
-            expected_utxos: Some(&["2 cBTC/68 vB", "1 cBTC/68 vB"]),
+            expected_utxos: &["2 cBTC/68 vB", "1 cBTC/68 vB"],
             expected_iterations: 3,
         }
         .assert();
@@ -207,8 +201,8 @@ mod tests {
             target: "3 cBTC",
             fee_rate: "10 sat/kwu",
             weighted_utxos: &["e(1 cBTC)/68 vB", "e(2 cBTC)/68 vB"],
-            expected_utxos: None,
-            expected_iterations: 0,
+            expected_utxos: &[],
+            expected_iterations: 2,
         }
         .assert();
     }
@@ -224,7 +218,7 @@ mod tests {
             target: "2 cBTC",
             fee_rate: "10 sat/kwu",
             weighted_utxos: &["1 cBTC/68 vB", "2050000 sats/68 vB"],
-            expected_utxos: Some(&["2050000 sats/68 vB", "1 cBTC/68 vB"]),
+            expected_utxos: &["2050000 sats/68 vB", "1 cBTC/68 vB"],
             expected_iterations: 2,
         }
         .assert();
@@ -236,7 +230,7 @@ mod tests {
             target: "2100000000000000 sat", // Amount::MAX
             fee_rate: "10 sat/kwu",
             weighted_utxos: &["1 cBTC/68 vB"],
-            expected_utxos: None,
+            expected_utxos: &[],
             expected_iterations: 0,
         }
         .assert();
@@ -248,7 +242,7 @@ mod tests {
             target: "1 cBTC",
             fee_rate: "0",
             weighted_utxos: &["2100000000000000 sats/68 vB", "1 sats/68 vB"], // [Amount::MAX, ,,]
-            expected_utxos: None,
+            expected_utxos: &[],
             expected_iterations: 0,
         }
         .assert();
@@ -261,7 +255,8 @@ mod tests {
             let target = Amount::arbitrary(u)?;
             let fee_rate = FeeRate::arbitrary(u)?;
 
-            let result: Option<_> = select_coins_srd(target, fee_rate, &pool.utxos, &mut get_rng());
+            let utxos = pool.utxos.clone();
+            let result: Result<_, _> = select_coins_srd(target, fee_rate, &utxos, &mut get_rng());
 
             if let Some((i, utxos)) = result {
                 assert!(i > 0);
