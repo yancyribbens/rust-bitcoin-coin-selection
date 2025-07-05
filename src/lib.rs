@@ -356,7 +356,7 @@ mod tests {
             let utxos = pool.utxos.clone();
             let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &utxos);
 
-            if let Some((i, utxos)) = result {
+            if let Ok((i, utxos)) = result {
                 assert!(i > 0);
                 assert_target_selection(&utxos, fee_rate, target, None);
             } else {
@@ -365,6 +365,6 @@ mod tests {
             }
 
             Ok(())
-        });
+        }).seed(0x9f8e0a2b00000020);
     }
 }

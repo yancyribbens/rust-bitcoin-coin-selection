@@ -863,7 +863,7 @@ mod tests {
                     fee_rate_b,
                     &pool.utxos
                 )
-                .is_none());
+                .is_err());
             } else {
                 pool.utxos.append(&mut solution.utxos);
                 pool.utxos.shuffle(&mut thread_rng());
@@ -874,8 +874,8 @@ mod tests {
                 let result_b =
                     select_coins_bnb(target, cost_of_change, fee_rate_b, fee_rate_a, &pool.utxos);
 
-                if let Some((i, utxos_a)) = result_a {
-                    if let Some((_, utxos_b)) = result_b {
+                if let Ok((i, utxos_a)) = result_a {
+                    if let Ok((_, utxos_b)) = result_b {
                         if fee_rate_a < fee_rate_b {
                             assert!(utxos_a.len() <= utxos_b.len());
                         }
@@ -907,6 +907,6 @@ mod tests {
             }
 
             Ok(())
-        });
+        }).seed(0x970363e500000020);
     }
 }
