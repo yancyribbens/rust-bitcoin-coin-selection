@@ -6,7 +6,8 @@
 
 use bitcoin_units::{Amount, CheckedSum, FeeRate};
 
-use crate::{OverflowError, Return, WeightedUtxo};
+use crate::OverflowError::{Addition, Subtraction};
+use crate::{Return, WeightedUtxo};
 
 // Total_Tries in Core:
 // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
@@ -164,8 +165,12 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
     let mut index_selection: Vec<usize> = vec![];
     let mut best_selection: Vec<usize> = vec![];
 
+    let target = target;
+    let upper_bound =
+        target.checked_add(cost_of_change).ok_or(crate::SelectionError::Overflow(Addition))?;
+
     let target = target.to_sat();
-    let upper_bound = target.checked_add(cost_of_change.to_sat()).ok_or(OverflowError::Addition)?;
+    let upper_bound = upper_bound.to_sat();
 
     let w_utxos = weighted_utxos
         .iter()
@@ -180,8 +185,12 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         // all utxo effective_values are now positive (see previous step) - cast to unsigned.
         .map(|(eff_val, waste, wu)| (eff_val.to_unsigned().unwrap(), waste, wu));
 
-    let mut available_value: u64 =
-        w_utxos.clone().map(|(ev, _, _)| ev).checked_sum().ok_or(OverflowError::Addition)?.to_sat();
+    let mut available_value: u64 = w_utxos
+        .clone()
+        .map(|(ev, _, _)| ev)
+        .checked_sum()
+        .ok_or(crate::SelectionError::Overflow(Addition))?
+        .to_sat();
 
     // cast from Amount/SignedAmount to u64/i64 for more performant operations.
     let mut w_utxos: Vec<(u64, i64, &Utxo)> =
@@ -190,8 +199,8 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
     // descending sort by effective_value using satisfaction weight as tie breaker.
     w_utxos.sort_by(|a, b| b.0.cmp(&a.0).then(b.2.weight().cmp(&a.2.weight())));
 
-    if available_value < target || target == 0 {
-        return Ok((0, vec![]));
+    if available_value < target {
+        return Err(crate::SelectionError::InsufficentFunds);
     }
 
     while iteration < ITERATION_LIMIT {
@@ -228,9 +237,12 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         else if value >= target {
             backtrack = true;
 
-            let waste: i64 =
-                (value as i64).checked_sub(target as i64).ok_or(OverflowError::Subtraction)?;
-            current_waste = current_waste.checked_add(waste).ok_or(OverflowError::Addition)?;
+            let waste: i64 = (value as i64)
+                .checked_sub(target as i64)
+                .ok_or(crate::SelectionError::Overflow(Subtraction))?;
+            current_waste = current_waste
+                .checked_add(waste)
+                .ok_or(crate::SelectionError::Overflow(Addition))?;
 
             // Check if index_selection is better than the previous known best, and
             // update best_selection accordingly.
@@ -239,7 +251,9 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
                 best_waste = current_waste;
             }
 
-            current_waste = current_waste.checked_sub(waste).ok_or(OverflowError::Subtraction)?;
+            current_waste = current_waste
+                .checked_sub(waste)
+                .ok_or(crate::SelectionError::Overflow(Subtraction))?;
         }
         // * Backtrack
         if backtrack {
@@ -260,9 +274,11 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
 
             assert_eq!(index, *index_selection.last().unwrap());
             let (eff_value, utxo_waste, _) = w_utxos[index];
-            current_waste =
-                current_waste.checked_sub(utxo_waste).ok_or(OverflowError::Subtraction)?;
-            value = value.checked_sub(eff_value).ok_or(OverflowError::Addition)?;
+            current_waste = current_waste
+                .checked_sub(utxo_waste)
+                .ok_or(crate::SelectionError::Overflow(Subtraction))?;
+            value =
+                value.checked_sub(eff_value).ok_or(crate::SelectionError::Overflow(Addition))?;
             index_selection.pop().unwrap();
         }
         // * Add next node to the inclusion branch.
@@ -283,8 +299,9 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
                 || w_utxos[index].0 != w_utxos[index - 1].0
             {
                 index_selection.push(index);
-                current_waste =
-                    current_waste.checked_add(utxo_waste).ok_or(OverflowError::Addition)?;
+                current_waste = current_waste
+                    .checked_add(utxo_waste)
+                    .ok_or(crate::SelectionError::Overflow(Addition))?;
 
                 // unchecked add is used here for performance.  Since the sum of all utxo values
                 // did not overflow, then any positive subset of the sum will not overflow.
@@ -863,7 +880,7 @@ mod tests {
                     fee_rate_b,
                     &pool.utxos
                 )
-                .is_none());
+                .is_err());
             } else {
                 pool.utxos.append(&mut solution.utxos);
                 pool.utxos.shuffle(&mut thread_rng());
@@ -874,8 +891,8 @@ mod tests {
                 let result_b =
                     select_coins_bnb(target, cost_of_change, fee_rate_b, fee_rate_a, &pool.utxos);
 
-                if let Some((i, utxos_a)) = result_a {
-                    if let Some((_, utxos_b)) = result_b {
+                if let Ok((i, utxos_a)) = result_a {
+                    if let Ok((_, utxos_b)) = result_b {
                         if fee_rate_a < fee_rate_b {
                             assert!(utxos_a.len() <= utxos_b.len());
                         }
@@ -889,7 +906,7 @@ mod tests {
                         }
                     }
 
-                    assert!(i > 0);
+                    assert!(i > 0 || target == Amount::ZERO);
                     crate::tests::assert_target_selection(
                         &utxos_a,
                         fee_rate_a,

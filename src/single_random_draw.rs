@@ -7,6 +7,7 @@
 use bitcoin_units::{Amount, CheckedSum, FeeRate};
 use rand::seq::SliceRandom;
 
+use crate::OverflowError::Addition;
 use crate::{Return, WeightedUtxo, CHANGE_LOWER};
 
 /// Randomize the input set and select coins until the target is reached.
@@ -28,10 +29,14 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
     weighted_utxos: &'a [Utxo],
     rng: &mut R,
 ) -> Return<'a, Utxo> {
-    // utxo sum cannot exceed Amount::MAX
-    let sum = weighted_utxos.iter().map(|u| u.value()).checked_sum();
-    if sum.is_none() {
-        return Ok((0, vec![]));
+    let available_value = weighted_utxos
+        .iter()
+        .map(|u| u.effective_value(fee_rate).unwrap_or(crate::SignedAmount::ZERO))
+        .checked_sum()
+        .ok_or(crate::SelectionError::Overflow(Addition))?;
+
+    if available_value < target.to_signed() {
+        return Err(crate::SelectionError::InsufficentFunds);
     }
 
     let mut result: Vec<_> = weighted_utxos.iter().collect();
@@ -40,10 +45,12 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
 
     result.clear();
 
-    let threshold = target.checked_add(CHANGE_LOWER).ok_or(crate::OverflowError::Addition)?;
+    let threshold =
+        target.checked_add(CHANGE_LOWER).ok_or(crate::SelectionError::Overflow(Addition))?;
     let mut value = Amount::ZERO;
 
     let mut iteration = 0;
+
     for w_utxo in origin {
         iteration += 1;
         let effective_value = w_utxo.effective_value(fee_rate);
@@ -173,7 +180,7 @@ mod tests {
             fee_rate: "0",
             weighted_utxos: &["1 cBTC/68 vB", "2 cBTC/68 vB"],
             expected_utxos: &[],
-            expected_iterations: 2,
+            expected_iterations: 0,
         }
         .assert();
     }
@@ -249,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn select_srd_proptest() {
+    fn select_coins_srd_proptest() {
         arbtest(|u| {
             let pool = UtxoPool::arbitrary(u)?;
             let target = Amount::arbitrary(u)?;
@@ -258,12 +265,14 @@ mod tests {
             let utxos = pool.utxos.clone();
             let result: Result<_, _> = select_coins_srd(target, fee_rate, &utxos, &mut get_rng());
 
-            if let Some((i, utxos)) = result {
-                assert!(i > 0);
-                crate::tests::assert_target_selection(&utxos, fee_rate, target, None);
-            } else {
-                let available_value = pool.available_value(fee_rate);
-                assert!(available_value.is_none() || available_value.unwrap() < target.to_signed());
+            match result {
+                Ok((i, utxos)) => {
+                    assert!(i > 0);
+                    crate::tests::assert_target_selection(&utxos, fee_rate, target, None);
+                }
+                Err(e) => {
+                    assert_eq!(e, crate::SelectionError::InsufficentFunds);
+                }
             }
 
             Ok(())

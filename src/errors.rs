@@ -3,6 +3,12 @@ use std::error::Error as E;
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
+pub enum SelectionError {
+    Overflow(OverflowError),
+    InsufficentFunds,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum OverflowError {
     Addition,
     Multiplication,

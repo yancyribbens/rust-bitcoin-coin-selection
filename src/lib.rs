@@ -19,10 +19,10 @@ use bitcoin_units::{Amount, FeeRate, SignedAmount, Weight};
 use rand::thread_rng;
 
 pub use crate::branch_and_bound::select_coins_bnb;
-use crate::errors::OverflowError;
+use crate::errors::{OverflowError, SelectionError};
 pub use crate::single_random_draw::select_coins_srd;
 
-pub(crate) type Return<'a, Utxo> = Result<(u32, Vec<&'a Utxo>), OverflowError>;
+pub(crate) type Return<'a, Utxo> = Result<(u32, Vec<&'a Utxo>), SelectionError>;
 
 // https://github.com/bitcoin/bitcoin/blob/f722a9bd132222d9d5cd503b5af25c905b205cdb/src/wallet/coinselection.h#L20
 const CHANGE_LOWER: Amount = Amount::from_sat_u32(50_000);
@@ -356,7 +356,7 @@ mod tests {
             let utxos = pool.utxos.clone();
             let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &utxos);
 
-            if let Some((i, utxos)) = result {
+            if let Ok((i, utxos)) = result {
                 assert!(i > 0);
                 assert_target_selection(&utxos, fee_rate, target, None);
             } else {
