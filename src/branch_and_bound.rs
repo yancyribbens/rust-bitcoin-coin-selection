@@ -231,8 +231,8 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         else if value >= target {
             backtrack = true;
 
-            let waste: i64 = (value as i64).checked_sub(target as i64)?;
-            current_waste = current_waste.checked_add(waste)?;
+            let waste: i64 = value as i64 - target as i64;
+            current_waste += waste;
 
             // Check if index_selection is better than the previous known best, and
             // update best_selection accordingly.
@@ -241,7 +241,7 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
                 best_waste = current_waste;
             }
 
-            current_waste = current_waste.checked_sub(waste)?;
+            current_waste -= waste;
         }
         // * Backtrack
         if backtrack {
@@ -262,8 +262,8 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
 
             assert_eq!(index, *index_selection.last().unwrap());
             let (eff_value, utxo_waste, _) = w_utxos[index];
-            current_waste = current_waste.checked_sub(utxo_waste)?;
-            value = value.checked_sub(eff_value)?;
+            current_waste -= utxo_waste;
+            value -= eff_value;
             index_selection.pop().unwrap();
         }
         // * Add next node to the inclusion branch.
@@ -284,7 +284,7 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
                 || w_utxos[index].0 != w_utxos[index - 1].0
             {
                 index_selection.push(index);
-                current_waste = current_waste.checked_add(utxo_waste)?;
+                current_waste += utxo_waste;
 
                 // unchecked add is used here for performance.  Since the sum of all utxo values
                 // did not overflow, then any positive subset of the sum will not overflow.
