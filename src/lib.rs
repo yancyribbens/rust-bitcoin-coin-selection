@@ -55,11 +55,16 @@ pub struct WeightedUtxo {
     value: Amount,
     /// The estimated `UTXO` `Weight` (satisfaction weight + base weight).
     weight: Weight,
+    /// The calculated effective_value of the `UTXO`.
+    effective_value: Option<SignedAmount>,
 }
 
 impl WeightedUtxo {
     /// Creates a new `WeightedUtxo`.
-    pub fn new(value: Amount, weight: Weight) -> WeightedUtxo { Self { value, weight } }
+    pub fn new(value: Amount, weight: Weight, fee_rate: FeeRate) -> WeightedUtxo {
+        let effective_value = effective_value(fee_rate, weight, value);
+        Self { value, weight, effective_value }
+    }
 
     /// Returns the associated value.
     pub fn value(&self) -> Amount { self.value }
@@ -142,7 +147,7 @@ mod tests {
             .map(|a| {
                 let amt = Amount::from_sat_u32(*a);
                 let weight = Weight::ZERO;
-                WeightedUtxo::new(amt, weight)
+                WeightedUtxo::new(amt, weight, FeeRate::ZERO)
             })
             .collect();
 
@@ -195,15 +200,17 @@ mod tests {
     #[derive(Debug)]
     pub struct UtxoPool {
         pub utxos: Vec<WeightedUtxo>,
+        pub fee_rate: FeeRate,
     }
 
     impl<'a> Arbitrary<'a> for UtxoPool {
         fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+            let fee_rate = FeeRate::arbitrary(u)?;
             let init: Vec<(Amount, Weight)> = Vec::arbitrary(u)?;
-            let pool: Vec<WeightedUtxo> =
-                init.iter().map(|i| WeightedUtxo::new(i.0, i.1)).collect();
+            let utxos: Vec<WeightedUtxo> =
+                init.iter().map(|i| WeightedUtxo::new(i.0, i.1, fee_rate)).collect();
 
-            Ok(UtxoPool { utxos: pool })
+            Ok(UtxoPool { utxos , fee_rate })
         }
     }
 
@@ -219,6 +226,17 @@ mod tests {
     }
 
     impl UtxoPool {
+        //pub fn new_pool_from_fee_rate(fee_rate) -> UtxoPool {
+            //let utxos = self.utxos.map(|u| {
+                //let value = u.value();
+                //let weight = u.weight();
+                //let effective_value = effective_value(value, weight, fee_rate);
+                //WeightedUtxo::new(value, weight, effective_value)
+            //})
+
+            //UtxoPool { utxos, fee_rate }
+        //}
+
         pub fn new(utxos: &[&str], fee_rate: FeeRate) -> UtxoPool {
             let utxos: Vec<_> = utxos
                 .iter()
@@ -235,11 +253,11 @@ mod tests {
                         Amount::from_str(val).unwrap()
                     };
 
-                    WeightedUtxo::new(abs_val, weight)
+                    WeightedUtxo::new(abs_val, weight, fee_rate)
                 })
                 .collect();
 
-            UtxoPool { utxos }
+            UtxoPool { utxos, fee_rate }
         }
 
         fn effective_value_sum(utxos: &[WeightedUtxo], fee_rate: FeeRate) -> Option<SignedAmount> {
@@ -249,8 +267,8 @@ mod tests {
                 .checked_sum()
         }
 
-        pub fn available_value(&self, fee_rate: FeeRate) -> Option<SignedAmount> {
-            Self::effective_value_sum(&self.utxos, fee_rate)
+        pub fn available_value(&self) -> Option<SignedAmount> {
+            Self::effective_value_sum(&self.utxos, self.fee_rate)
         }
     }
 
@@ -323,25 +341,24 @@ mod tests {
             let pool = UtxoPool::arbitrary(u)?;
             let target = Amount::arbitrary(u)?;
             let cost_of_change = Amount::arbitrary(u)?;
-            let fee_rate = FeeRate::arbitrary(u)?;
             let lt_fee_rate = FeeRate::arbitrary(u)?;
 
             let utxos = pool.utxos.clone();
-            let result = select_coins(target, cost_of_change, fee_rate, lt_fee_rate, &utxos);
+            let result = select_coins(target, cost_of_change, pool.fee_rate, lt_fee_rate, &utxos);
 
             match result {
                 Ok((i, utxos)) => {
                     assert!(i > 0);
-                    crate::tests::assert_target_selection(&utxos, fee_rate, target, None);
+                    crate::tests::assert_target_selection(&utxos, pool.fee_rate, target, None);
                 }
                 Err(InsufficentFunds) => {
-                    let available_value = pool.available_value(fee_rate).unwrap();
+                    let available_value = pool.available_value().unwrap();
                     assert!(
                         available_value < (target.to_signed() + CHANGE_LOWER.to_signed()).unwrap()
                     );
                 }
                 Err(Overflow(_)) => {
-                    let available_value = pool.available_value(fee_rate);
+                    let available_value = pool.available_value();
                     assert!(
                         available_value.is_none() || target.checked_add(CHANGE_LOWER).is_none()
                     );

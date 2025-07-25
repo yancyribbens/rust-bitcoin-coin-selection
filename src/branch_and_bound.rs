@@ -775,6 +775,7 @@ mod tests {
         let base: usize = 2;
         let alpha = (0..17).enumerate().map(|(i, _)| base.pow(17 + i as u32));
         let target = Amount::from_sat_u32(alpha.clone().sum::<usize>() as u32);
+        let fee_rate = FeeRate::ZERO;
 
         let beta = (0..17).enumerate().map(|(i, _)| {
             let a = base.pow(17 + i as u32);
@@ -789,9 +790,9 @@ mod tests {
             .map(|a| Amount::from_sat_u32(a as u32))
             .collect();
 
-        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO)).collect();
+        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate)).collect();
 
-        let result = select_coins_bnb(target, Amount::ONE_SAT, FeeRate::ZERO, FeeRate::ZERO, &pool);
+        let result = select_coins_bnb(target, Amount::ONE_SAT, fee_rate, fee_rate, &pool);
 
         match result {
             Err(IterationLimitReached) => {}
@@ -804,6 +805,7 @@ mod tests {
         // Takes 163,819 iterations to find a solution.
         let base: u32 = 2;
         let mut target = 0;
+        let fee_rate = FeeRate::ZERO;
         let vals = (0..15).enumerate().flat_map(|(i, _)| {
             let a = base.pow(15 + i as u32);
             target += a;
@@ -811,13 +813,13 @@ mod tests {
         });
 
         let amts: Vec<_> = vals.map(Amount::from_sat_u32).collect();
-        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO)).collect();
+        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate)).collect();
 
         let result = select_coins_bnb(
             Amount::from_sat_u32(target),
             Amount::ONE_SAT,
-            FeeRate::ZERO,
-            FeeRate::ZERO,
+            fee_rate,
+            fee_rate,
             &pool,
         );
 
@@ -833,6 +835,7 @@ mod tests {
         // Takes 163,819 iterations (hits the iteration limit).
         let base: u32 = 2;
         let mut target = 0;
+        let fee_rate = FeeRate::ZERO;
         let amts = (0..15).enumerate().flat_map(|(i, _)| {
             let a = base.pow(15 + i as u32);
             target += a;
@@ -843,13 +846,13 @@ mod tests {
 
         // Add a value that will match the target before iteration exhaustion occurs.
         amts.push(Amount::from_sat_u32(target));
-        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO)).collect();
+        let pool: Vec<_> = amts.into_iter().map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate)).collect();
 
         let (iterations, utxos) = select_coins_bnb(
             Amount::from_sat_u32(target),
             Amount::ONE_SAT,
-            FeeRate::ZERO,
-            FeeRate::ZERO,
+            fee_rate,
+            fee_rate,
             &pool,
         )
         .unwrap();
@@ -865,8 +868,6 @@ mod tests {
             let mut pool = UtxoPool::arbitrary(u)?;
 
             let cost_of_change = Amount::arbitrary(u)?;
-            let fee_rate_a = FeeRate::arbitrary(u)?;
-            let fee_rate_b = FeeRate::arbitrary(u)?;
 
             let mut solution = UtxoPool::arbitrary(u)?;
             let target_set: Vec<Amount> = solution
@@ -888,45 +889,14 @@ mod tests {
             pool.utxos.append(&mut solution.utxos);
             pool.utxos.shuffle(&mut thread_rng());
 
-            let result_a =
-                select_coins_bnb(target, cost_of_change, fee_rate_a, fee_rate_b, &pool.utxos);
+            let result = select_coins_bnb(target, cost_of_change, fee_rate_a, fee_rate_b, &pool.utxos);
 
-            let result_b =
-                select_coins_bnb(target, cost_of_change, fee_rate_b, fee_rate_a, &pool.utxos);
-
-            match result_a {
-                Ok((i, utxos_a)) => {
-                    if let Ok((_, utxos_b)) = result_b {
-                        let weight_sum_a = utxos_a
-                            .iter()
-                            .map(|u| u.weight())
-                            .try_fold(Weight::ZERO, Weight::checked_add);
-                        let weight_sum_b = utxos_b
-                            .iter()
-                            .map(|u| u.weight())
-                            .try_fold(Weight::ZERO, Weight::checked_add);
-
-                        if let Some(weight_a) = weight_sum_a {
-                            if let Some(weight_b) = weight_sum_b {
-                                if fee_rate_a < fee_rate_b {
-                                    assert!(weight_a >= weight_b);
-                                }
-
-                                if fee_rate_b < fee_rate_a {
-                                    assert!(weight_b >= weight_a);
-                                }
-
-                                if fee_rate_a == fee_rate_b {
-                                    assert!(weight_a == weight_b);
-                                }
-                            }
-                        }
-                    }
-
+            match result {
+                Ok((i, utxos)) => {
                     assert!(i > 0 || target == Amount::ZERO);
                     crate::tests::assert_target_selection(
-                        &utxos_a,
-                        fee_rate_a,
+                        &utxos,
+                        fee_rate,
                         target,
                         upper_bound,
                     );

@@ -268,25 +268,24 @@ mod tests {
         arbtest(|u| {
             let pool = UtxoPool::arbitrary(u)?;
             let target = Amount::arbitrary(u)?;
-            let fee_rate = FeeRate::arbitrary(u)?;
 
             let utxos = pool.utxos.clone();
-            let result: Result<_, _> = select_coins_srd(target, fee_rate, &utxos, &mut get_rng());
+            let result: Result<_, _> = select_coins_srd(target, pool.fee_rate, &utxos, &mut get_rng());
 
             match result {
                 Ok((i, utxos)) => {
                     assert!(i > 0);
-                    crate::tests::assert_target_selection(&utxos, fee_rate, target, None);
+                    crate::tests::assert_target_selection(&utxos, pool.fee_rate, target, None);
                 }
                 Err(InsufficentFunds) => {
-                    let available_value = pool.available_value(fee_rate).unwrap();
+                    let available_value = pool.available_value().unwrap();
                     assert!(
                         available_value < (target.to_signed() + CHANGE_LOWER.to_signed()).unwrap()
                     );
                 }
                 Err(crate::SelectionError::IterationLimitReached) => panic!("un-expected result"),
                 Err(Overflow(_)) => {
-                    let available_value = pool.available_value(fee_rate);
+                    let available_value = pool.available_value();
                     assert!(
                         available_value.is_none() || target.checked_add(CHANGE_LOWER).is_none()
                     );
