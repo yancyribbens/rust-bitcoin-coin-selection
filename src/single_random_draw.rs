@@ -4,8 +4,7 @@
 //!
 //! This module introduces the Single Random Draw Coin-Selection Algorithm.
 
-use bitcoin::blockdata::transaction::effective_value;
-use bitcoin::{Amount, FeeRate};
+use bitcoin_units::{Amount, FeeRate};
 use rand::seq::SliceRandom;
 
 use crate::{Return, WeightedUtxo, CHANGE_LOWER};
@@ -57,7 +56,7 @@ pub fn select_coins_srd<'a, R: rand::Rng + ?Sized, Utxo: WeightedUtxo>(
         iteration += 1;
         let utxo_value = w_utxo.value();
         let utxo_weight = w_utxo.satisfaction_weight();
-        let effective_value = effective_value(fee_rate, utxo_weight, utxo_value);
+        let effective_value = crate::effective_value(fee_rate, utxo_weight, utxo_value);
 
         if let Some(e) = effective_value {
             if let Ok(v) = e.to_unsigned() {
@@ -81,7 +80,7 @@ mod tests {
 
     use arbitrary::Arbitrary;
     use arbtest::arbtest;
-    use bitcoin::Amount;
+    use bitcoin_units::Amount;
     use rand::rngs::mock::StepRng;
 
     use super::*;

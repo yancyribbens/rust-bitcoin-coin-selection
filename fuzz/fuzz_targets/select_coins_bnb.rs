@@ -1,14 +1,14 @@
 #![no_main]
 
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{TxOut, FeeRate, Amount, Weight};
+use bitcoin_units::{FeeRate, Amount, Weight};
 use bitcoin_coin_selection::{select_coins_bnb, WeightedUtxo};
 use libfuzzer_sys::fuzz_target;
 
 #[derive(Arbitrary, Debug)]
 pub struct Utxo {
-    output: TxOut,
-    satisfaction_weight: Weight
+    value: Amount,
+    satisfaction_weight: Weight,
 }
 
 impl WeightedUtxo for Utxo {
@@ -17,7 +17,7 @@ impl WeightedUtxo for Utxo {
     }
 
     fn value(&self) -> Amount {
-        self.output.value
+        self.value
     }
 }
 

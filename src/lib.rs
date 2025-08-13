@@ -14,7 +14,7 @@
 mod branch_and_bound;
 mod single_random_draw;
 
-use bitcoin::{Amount, FeeRate, SignedAmount, Weight};
+use bitcoin_units::{Amount, FeeRate, SignedAmount, Weight};
 use rand::thread_rng;
 
 pub use crate::branch_and_bound::select_coins_bnb;
@@ -33,6 +33,29 @@ const OUT_POINT_SIZE: u64 = 32 + 4;
 
 // https://github.com/rust-bitcoin/rust-bitcoin/blob/35202ba51bef3236e6ed1007a0d2111265b6498c/bitcoin/src/blockdata/transaction.rs#L249
 const BASE_WEIGHT: Weight = Weight::from_vb_unwrap(OUT_POINT_SIZE + SEQUENCE_SIZE);
+
+/// Computes the value of an output accounting for the cost of spending it.
+///
+/// The effective value is the value of an output value minus the amount to spend it.  That is, the
+/// effective_value can be calculated as: value - (fee_rate * weight).
+///
+/// Note: the effective value of a [`Transaction`] may increase less than the effective value of
+/// a [`TxOut`] when adding another [`TxOut`] to the transaction.  This happens when the new
+/// [`TxOut`] added causes the output length `VarInt` to increase its encoding length.
+///
+/// # Arguments
+///
+/// * `fee_rate` - the fee rate of the transaction being created.
+/// * `satisfaction_weight` - satisfied spending conditions weight.
+pub fn effective_value(
+    fee_rate: FeeRate,
+    satisfaction_weight: Weight,
+    value: Amount,
+) -> Option<SignedAmount> {
+    let weight = satisfaction_weight.checked_add(BASE_WEIGHT)?;
+    let signed_input_fee = fee_rate.checked_mul_by_weight(weight)?.to_signed().ok()?;
+    value.to_signed().ok()?.checked_sub(signed_input_fee)
+}
 
 /// Behavior needed for coin-selection.
 pub trait WeightedUtxo {
@@ -133,9 +156,9 @@ mod tests {
 
     use arbitrary::{Arbitrary, Result, Unstructured};
     use arbtest::arbtest;
-    use bitcoin::amount::CheckedSum;
-    use bitcoin::transaction::effective_value;
-    use bitcoin::{Amount, Weight};
+    use bitcoin_units::amount::CheckedSum;
+    use crate::effective_value;
+    use bitcoin_units::{Amount, Weight};
 
     use super::*;
 

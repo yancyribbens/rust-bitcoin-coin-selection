@@ -1,17 +1,17 @@
-use bitcoin::{Amount, FeeRate, ScriptBuf, TxOut, Weight};
+use bitcoin_units::{Amount, FeeRate, Weight};
 use bitcoin_coin_selection::{select_coins_bnb, WeightedUtxo};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[derive(Debug, Clone)]
 pub struct Utxo {
-    output: TxOut,
+    value: Amount,
     satisfaction_weight: Weight,
 }
 
 impl WeightedUtxo for Utxo {
     fn satisfaction_weight(&self) -> Weight { self.satisfaction_weight }
 
-    fn value(&self) -> Amount { self.output.value }
+    fn value(&self) -> Amount { self.value }
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
@@ -19,12 +19,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let cost_of_change = Amount::from_sat(50_000);
 
     let one = Utxo {
-        output: TxOut { value: Amount::from_sat(1_000), script_pubkey: ScriptBuf::new() },
+        value: Amount::from_sat(1_000),
         satisfaction_weight: Weight::ZERO,
     };
 
     let two = Utxo {
-        output: TxOut { value: Amount::from_sat(3), script_pubkey: ScriptBuf::new() },
+        value: Amount::from_sat(3),
         satisfaction_weight: Weight::ZERO,
     };
 
