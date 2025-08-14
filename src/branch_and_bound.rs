@@ -197,6 +197,10 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         return None;
     }
 
+    for u in &w_utxos {
+        println!("val {:?} weight {:?} waste {:?}", u.2.value(), u.2.satisfaction_weight(), u.2.waste(fee_rate, long_term_fee_rate));
+    }
+
     while iteration < ITERATION_LIMIT {
         backtrack = false;
 
