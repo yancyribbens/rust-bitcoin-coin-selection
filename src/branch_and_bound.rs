@@ -307,6 +307,7 @@ fn index_to_utxo_list<Utxo: WeightedUtxo>(
     index_list: Vec<usize>,
     wu: Vec<(Amount, SignedAmount, &Utxo)>,
 ) -> Return<Utxo> {
+    println!("iterations {:?}", iterations);
     let mut result: Vec<_> = Vec::new();
     let list = index_list;
 
