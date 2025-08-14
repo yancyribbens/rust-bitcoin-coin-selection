@@ -229,6 +229,8 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
         // * value meets or exceeds the target.
         //   Record the solution and the waste then continue.
         else if value >= target {
+            println!();
+            println!("solution found {:?}", iteration);
             backtrack = true;
 
             let v = value.to_signed().ok()?;
@@ -239,6 +241,7 @@ pub fn select_coins_bnb<Utxo: WeightedUtxo>(
             // Check if index_selection is better than the previous known best, and
             // update best_selection accordingly.
             if current_waste <= best_waste {
+                println!("new best waste found {:?} @ {:?}", current_waste, iteration);
                 best_selection = index_selection.clone();
                 best_waste = current_waste;
             }
