@@ -183,7 +183,15 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Clone, PartialEq, Ord, Eq, PartialOrd, Arbitrary)]
+    impl<'a> Arbitrary<'a> for Utxo {
+        fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+            let value = Amount::arbitrary(u)?;
+            let satisfaction_weight = Weight::arbitrary(u)?;
+            Ok(Utxo { value, satisfaction_weight })
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Ord, Eq, PartialOrd)]
     pub struct Utxo {
         pub value: Amount,
         pub satisfaction_weight: Weight,
