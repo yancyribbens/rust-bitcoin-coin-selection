@@ -13,6 +13,7 @@
 
 mod branch_and_bound;
 mod coin_grinder;
+mod knapsack_solver;
 mod single_random_draw;
 
 mod weighted_utxo;
