@@ -11,8 +11,8 @@
 // Experimental features we need.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-mod branch_and_bound;
-mod single_random_draw;
+pub mod branch_and_bound;
+pub mod single_random_draw;
 
 use bitcoin::{Amount, FeeRate, SignedAmount, Weight};
 #[cfg(feature = "rand")]
