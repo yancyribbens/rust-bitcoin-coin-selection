@@ -29,12 +29,13 @@ use rand::thread_rng;
 
 pub use crate::branch_and_bound::branch_and_bound;
 pub use crate::coin_grinder::coin_grinder;
+
 use crate::errors::{OverflowError, SelectionError};
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 pub use crate::single_random_draw::single_random_draw;
 
-pub(crate) type Return<'a> = Result<(u32, Vec<&'a WeightedUtxo>), SelectionError>;
+pub(crate) type Return<'a> = Result<(u32, Vec<&'a dyn WeightedUtxo>), SelectionError>;
 
 /// Computes the value of an output accounting for the cost to spend it.
 ///
@@ -85,19 +86,22 @@ pub(crate) fn effective_value(
 /// one found.
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
-pub fn select_coins<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::Copy>(
+pub fn select_coins<'a, T: WeightedUtxo>(
     target: Amount,
     cost_of_change: Amount,
     max_weight: Weight,
+    fee_rate: FeeRate,
+    long_term_fee_rate: FeeRate,
     weighted_utxos: T,
-) -> Return<'a> {
-    let bnb_result = branch_and_bound(target, cost_of_change, max_weight, weighted_utxos);
+) -> Result<(u32, Vec<&'a T>), SelectionError> {
+    //let bnb_result = branch_and_bound(target, cost_of_change, max_weight, fee_rate, long_term_fee_rate, weighted_utxos);
 
-    if bnb_result.is_err() {
-        single_random_draw(target, max_weight, &mut thread_rng(), weighted_utxos)
-    } else {
-        bnb_result
-    }
+    //if bnb_result.is_err() {
+        //single_random_draw(target, max_weight, &mut thread_rng(), fee_rate, weighted_utxos)
+    //} else {
+        //bnb_result
+    //}
+    Ok((0, vec![]))
 }
 
 #[cfg(test)]

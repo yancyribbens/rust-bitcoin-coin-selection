@@ -4,66 +4,68 @@
 //!
 //! This module introduces the Coin Grinder selection algorithm.
 //!
-use bitcoin_units::{Amount, Weight};
+use bitcoin_units::{Amount, FeeRate, Weight};
+
+use crate::errors::SelectionError;
 
 use crate::OverflowError::Addition;
 use crate::SelectionError::{
-    InsufficentFunds, IterationLimitReached, MaxWeightExceeded, Overflow, SolutionNotFound,
+    InsufficentFunds, Overflow, SolutionNotFound,
 };
-use crate::{Return, WeightedUtxo};
+use crate::WeightedUtxo;
 
 const ITERATION_LIMIT: u32 = 100_000;
 
 // The sum of UTXO amounts after this UTXO index, e.g. lookahead[5] = Σ(UTXO[6+].amount)
-fn build_lookahead(lookahead: Vec<&WeightedUtxo>, available_value: Amount) -> Vec<Amount> {
-    lookahead
-        .iter()
-        .map(|u| u.effective_value())
-        .scan(available_value, |state, u| {
-            *state = (*state - u).unwrap();
-            Some(*state)
-        })
-        .collect()
-}
+//fn build_lookahead(lookahead: Vec<&WeightedUtxo>, available_value: Amount) -> Vec<Amount> {
+    //lookahead
+        //.iter()
+        //.map(|u| u.effective_value())
+        //.scan(available_value, |state, u| {
+            //*state = (*state - u).unwrap();
+            //Some(*state)
+        //})
+        //.collect()
+//}
 
 // Provides a lookup to determine the minimum UTXO weight after a given index.
-fn build_min_tail_weight(weighted_utxos: Vec<&WeightedUtxo>) -> Vec<Weight> {
-    let weights: Vec<_> = weighted_utxos.into_iter().map(|u| u.weight()).rev().collect();
-    let mut prev = Weight::MAX;
-    let mut result = Vec::new();
-    for w in weights {
-        result.push(prev);
-        prev = std::cmp::min(prev, w);
-    }
-    result.into_iter().rev().collect()
-}
+//fn build_min_tail_weight(weighted_utxos: Vec<&WeightedUtxo>) -> Vec<Weight> {
+    //let weights: Vec<_> = weighted_utxos.into_iter().map(|u| u.weight()).rev().collect();
+    //let mut prev = Weight::MAX;
+    //let mut result = Vec::new();
+    //for w in weights {
+        //result.push(prev);
+        //prev = std::cmp::min(prev, w);
+    //}
+    //result.into_iter().rev().collect()
+//}
 
-fn index_to_utxo_list<'a>(
-    iteration: u32,
-    index_list: Vec<usize>,
-    iterations: u32,
-    max_tx_weight_exceeded: bool,
-    wu: Vec<&'a WeightedUtxo>,
-) -> Return<'a> {
-    let mut result: Vec<_> = Vec::new();
+//fn index_to_utxo_list<'a>(
+    //iteration: u32,
+    //index_list: Vec<usize>,
+    //iterations: u32,
+    //max_tx_weight_exceeded: bool,
+    //wu: Vec<&'a WeightedUtxo>,
+//) -> Return<'a> {
+    //let mut result: Vec<_> = Vec::new();
 
-    for i in index_list {
-        let wu = wu[i];
-        result.push(wu);
-    }
+    //for i in index_list {
+        //let wu = wu[i];
+        //result.push(wu);
+    //}
 
-    if result.is_empty() {
-        if iterations == ITERATION_LIMIT {
-            Err(IterationLimitReached)
-        } else if max_tx_weight_exceeded {
-            Err(MaxWeightExceeded)
-        } else {
-            Err(SolutionNotFound)
-        }
-    } else {
-        Ok((iteration, result))
-    }
-}
+    //if result.is_empty() {
+        //if iterations == ITERATION_LIMIT {
+            //Err(IterationLimitReached)
+        //} else if max_tx_weight_exceeded {
+            //Err(MaxWeightExceeded)
+        //} else {
+            //Err(SolutionNotFound)
+        //}
+    //} else {
+        //Ok((iteration, result))
+    //}
+//}
 
 // Estimate if any combination of remaining inputs would be higher than `best_weight`
 fn is_remaining_weight_higher(
@@ -120,212 +122,14 @@ fn is_remaining_weight_higher(
 /// iterations to find the solution and `Vec<&'a WeightedUtxo>` is the best found selection.
 /// Note that if the iteration count equals `ITERATION_LIMIT`, a better solution may exist than the
 /// one found.
-pub fn coin_grinder<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::Copy>(
+pub fn coin_grinder<'a, T: WeightedUtxo>(
     target: Amount,
     change_target: Amount,
     max_selection_weight: Weight,
-    weighted_utxos: T,
-) -> Return<'a> {
-    weighted_utxos
-        .into_iter()
-        .map(|u| u.weight())
-        .try_fold(Weight::ZERO, Weight::checked_add)
-        .ok_or(Overflow(Addition))?;
-
-    let available_value = weighted_utxos
-        .into_iter()
-        .map(|u| u.effective_value())
-        .try_fold(Amount::ZERO, Amount::checked_add)
-        .ok_or(Overflow(Addition))?;
-
-    let mut weighted_utxos: Vec<_> = weighted_utxos.into_iter().collect();
-    weighted_utxos.sort();
-
-    let lookahead = build_lookahead(weighted_utxos.clone(), available_value);
-    let min_tail_weight = build_min_tail_weight(weighted_utxos.clone());
-
-    let total_target = target.checked_add(change_target).ok_or(Overflow(Addition))?;
-
-    if available_value < total_target {
-        return Err(InsufficentFunds);
-    }
-
-    if weighted_utxos.is_empty() {
-        return Err(SolutionNotFound);
-    }
-
-    let mut selection: Vec<usize> = vec![];
-    let mut best_selection: Vec<usize> = vec![];
-
-    let mut amount_total: Amount = Amount::ZERO;
-    let mut best_amount: Amount = Amount::MAX;
-
-    let mut weight_total: Weight = Weight::ZERO;
-    let mut best_weight: Weight = max_selection_weight;
-    let mut max_tx_weight_exceeded = false;
-
-    let mut next_utxo_index = 0;
-    let mut iteration: u32 = 0;
-
-    loop {
-        // Given a target of 11, and candidate set: [10/2, 7/1, 5/1, 4/2]
-        //
-        //      o
-        //     /
-        //  10/2
-        //   /
-        // 17/3
-        //
-        // A solution 17/3 is recorded, however the total of 11 is exceeded.
-        // Therefor, 7/1 is shifted to the exclusion branch and 5/1 is added.
-        //
-        //      o
-        //     / \
-        //  10/2
-        //   / \
-        //   17/3
-        //    /
-        //  15/3
-        //
-        // This operation happens when "shift" is true.  That is, move from
-        // the inclusion branch 17/3 via the omission branch 10/2 to it's
-        // inclusion-branch child 15/3
-        let mut shift = false;
-
-        // Given a target of 11, and candidate set: [10/2, 7/1, 5/1, 4/2]
-        // Solutions, 17/3 (shift) 15/3 (shift) and 14/4 are evaluated.
-        //
-        // At this point, the leaf node 14/4 makes a shift impossible
-        // since there is not an inclusion-branch child.  In other words,
-        // this is a leaf node.
-        //
-        //      o
-        //     /
-        //  10/2
-        //    \
-        //     \
-        //     /
-        //   14/4
-        //
-        // Instead we go to the omission branch of the nodes last ancestor.
-        // That is, we "cut" removing every child of 10/2 and shift 10/2
-        // to the omission branch.
-        //
-        //      o
-        //     / \
-        //      10/2
-        let mut cut = false;
-
-        let utxo = weighted_utxos[next_utxo_index];
-        let eff_value = utxo.effective_value();
-
-        amount_total = (amount_total + eff_value).unwrap();
-        weight_total += utxo.weight();
-
-        selection.push(next_utxo_index);
-        next_utxo_index += 1;
-        iteration += 1;
-
-        let tail: usize = *selection.last().unwrap();
-        if (amount_total + lookahead[tail]).unwrap() < total_target {
-            cut = true;
-        } else if weight_total > best_weight {
-            max_tx_weight_exceeded = true;
-            if weighted_utxos[tail].weight() <= min_tail_weight[tail] {
-                cut = true;
-            } else {
-                shift = true;
-            }
-        } else if amount_total >= total_target {
-            shift = true;
-            if weight_total < best_weight
-                || weight_total == best_weight && amount_total < best_amount
-            {
-                best_selection = selection.clone();
-                best_weight = weight_total;
-                best_amount = amount_total;
-            }
-        } else if !best_selection.is_empty() {
-            if let Some(is_higher) = is_remaining_weight_higher(
-                weight_total,
-                min_tail_weight[tail],
-                total_target,
-                amount_total,
-                weighted_utxos[tail].effective_value(),
-                best_weight,
-            ) {
-                if is_higher {
-                    if weighted_utxos[tail].weight() <= min_tail_weight[tail] {
-                        cut = true;
-                    } else {
-                        shift = true;
-                    }
-                }
-            }
-        }
-
-        if iteration >= ITERATION_LIMIT {
-            return index_to_utxo_list(
-                iteration,
-                best_selection,
-                iteration,
-                max_tx_weight_exceeded,
-                weighted_utxos,
-            );
-        }
-
-        // check if evaluating a leaf node.
-        if next_utxo_index == weighted_utxos.len() {
-            cut = true;
-        }
-
-        if cut {
-            // deselect
-            let utxo = weighted_utxos[*selection.last().unwrap()];
-            let eff_value = utxo.effective_value();
-
-            amount_total = (amount_total - eff_value).unwrap();
-            weight_total -= utxo.weight();
-            selection.pop();
-            shift = true;
-        }
-
-        while shift {
-            if selection.is_empty() {
-                return index_to_utxo_list(
-                    iteration,
-                    best_selection,
-                    iteration,
-                    max_tx_weight_exceeded,
-                    weighted_utxos,
-                );
-            }
-
-            next_utxo_index = selection.last().unwrap() + 1;
-
-            // deselect
-            let utxo = weighted_utxos[*selection.last().unwrap()];
-            let eff_value = utxo.effective_value();
-
-            amount_total = (amount_total - eff_value).unwrap();
-            weight_total -= utxo.weight();
-            selection.pop();
-
-            shift = false;
-
-            // skip all next inputs that are equivalent to the current input
-            // if the current input didn't contribute to a solution.
-            while weighted_utxos[next_utxo_index - 1].effective_value()
-                == weighted_utxos[next_utxo_index].effective_value()
-            {
-                if next_utxo_index >= weighted_utxos.len() - 1 {
-                    shift = true;
-                    break;
-                }
-                next_utxo_index += 1;
-            }
-        }
-    }
+    fee_rate: FeeRate,
+    weighted_utxos: &[T],
+) -> Result<(u32, Vec<&WeightedUtxo>), SelectionError> {
+    Ok((0, vec![]))
 }
 
 #[cfg(test)]

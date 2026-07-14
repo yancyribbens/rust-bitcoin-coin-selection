@@ -6,14 +6,16 @@
 
 use std::collections::BinaryHeap;
 
-use bitcoin_units::{Amount, Weight};
+use crate::errors::SelectionError;
+
+use bitcoin_units::{Amount, FeeRate, Weight};
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 use rand::seq::SliceRandom;
 
 use crate::OverflowError::Addition;
 use crate::SelectionError::{InsufficentFunds, MaxWeightExceeded, Overflow, SolutionNotFound};
-use crate::{Return, WeightedUtxo};
+use crate::WeightedUtxo;
 
 /// Select coins by Single Random Draw (SRD).
 ///
@@ -37,16 +39,13 @@ use crate::{Return, WeightedUtxo};
 /// iterations to find the solution and `Vec<&'a WeightedUtxo>` is the randomly found selection.
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
-pub fn single_random_draw<
-    'a,
-    R: rand::Rng + ?Sized,
-    T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::Copy,
->(
+pub fn single_random_draw<'a, R: rand::Rng + ?Sized, T: WeightedUtxo + 'static>(
     target: Amount,
     max_weight: Weight,
-    rng: &mut R,
-    weighted_utxos: T,
-) -> Return<'a> {
+    rng: &'a mut R,
+    fee_rate: FeeRate,
+    weighted_utxos: &'a [T],
+) -> Result<(u32, Vec<&'a WeightedUtxo>), SelectionError> {
     let _ = weighted_utxos
         .into_iter()
         .map(|u| u.weight())
@@ -65,7 +64,7 @@ pub fn single_random_draw<
 
     let mut origin: Vec<_> = weighted_utxos.into_iter().collect();
     origin.shuffle(rng);
-    let mut heap: BinaryHeap<&WeightedUtxo> = BinaryHeap::new();
+    let mut heap: BinaryHeap<&dyn WeightedUtxo> = BinaryHeap::new();
 
     let mut value = Amount::ZERO;
 
@@ -93,7 +92,7 @@ pub fn single_random_draw<
         }
 
         if value >= target {
-            let result: Vec<_> = heap.into_sorted_vec();
+            let result: Vec<&dyn WeightedUtxo> = heap.into_sorted_vec();
             return Ok((iteration, result));
         }
     }

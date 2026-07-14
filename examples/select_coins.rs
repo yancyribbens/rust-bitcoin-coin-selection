@@ -5,6 +5,16 @@ use bitcoin_coin_selection::{
 use bitcoin_units::{Amount, FeeRate, Weight};
 use rand::thread_rng;
 
+#[derive(Debug, Eq, PartialEq)]
+struct Utxo {
+    value: Amount,
+}
+
+impl WeightedUtxo for Utxo {
+    fn weight(&self) -> Weight { Weight::from_wu(66) }
+    fn value(&self) -> Amount { self.value }
+}
+
 fn main() {
     let target = Amount::from_sat_u32(112_358);
     let cost_of_change = Amount::from_sat_u32(768);
@@ -13,13 +23,7 @@ fn main() {
     let tr_weight = Weight::from_wu(230);
 
     let amts = [271_828, 314_159];
-    let utxos: Vec<_> = amts
-        .iter()
-        .map(|&x| {
-            let utxo_amt = Amount::from_sat_u32(x);
-            WeightedUtxo::new(utxo_amt, tr_weight, fee_rate, long_term_fee_rate).unwrap()
-        })
-        .collect();
+    let utxos: Vec<_> = amts.iter().map(|&x| Utxo { value: Amount::from_sat(x) }).collect();
 
     let bnb_selection = branch_and_bound(target, cost_of_change, Weight::MAX, &utxos);
     match bnb_selection {

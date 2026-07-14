@@ -1,91 +1,44 @@
-use std::cmp::Ordering;
-
 use bitcoin_units::{Amount, FeeRate, SignedAmount, Weight};
 
 use crate::effective_value;
 
-/// Represents the spendable conditions of a `UTXO`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WeightedUtxo {
-    /// The `Amount` that the output contributes towards the selection target.
-    value: Amount,
-    /// The estimated `Weight` (satisfaction weight + base weight) of the output.
-    weight: Weight,
-    /// The positive effective value `(value - fee)`.  This value is stored as a `u64` for
-    /// better performance.
-    effective_value: u64,
-    /// The `SignedAmount` required to spend the output at the given `fee_rate`.
-    fee: SignedAmount,
-    /// The `SignedAmount` required to spend the output at the given `long_term_fee_rate`.
-    long_term_fee: SignedAmount,
-    /// A metric for how wasteful it is to spend this `WeightedUtxo` given the current fee
-    /// environment.
-    waste: i64,
-}
+// 32 byte txid, 4 byte output index, 1 byte scriptSig, and 4 byte sequence
+const BASE_WEIGHT: Weight = Weight::from_vb_unwrap(32 + 4 + 1 + 4);
 
-impl WeightedUtxo {
-    /// Creates a new `WeightedUtxo`.
-    pub fn new(
-        value: Amount,
-        weight: Weight,
-        fee_rate: FeeRate,
-        long_term_fee_rate: FeeRate,
-    ) -> Option<WeightedUtxo> {
-        let positive_effective_value = Self::positive_effective_value(fee_rate, weight, value);
+/// Behavior needed for coin-selection.
+pub trait WeightedUtxo {
+    /// weight
+    fn weight(&self) -> Weight;
 
-        if let Some(effective_value) = positive_effective_value {
-            let fee = fee_rate.to_fee(weight).to_signed();
-            let long_term_fee: SignedAmount = long_term_fee_rate.to_fee(weight).to_signed();
-            let waste = Self::calculate_waste(fee, long_term_fee);
-            return Some(Self { value, weight, effective_value, fee, long_term_fee, waste });
-        }
+    /// value.
+    fn value(&self) -> Amount;    
 
-        None
-    }
+    /// feerate.
+    fn feerate(&self) -> FeeRate;
 
-    /// Calculates if the current fee environment is expensive.
-    pub fn is_fee_expensive(&self) -> bool { self.fee > self.long_term_fee }
-
-    /// Returns the associated value.
-    pub fn value(&self) -> Amount { self.value }
-
-    /// Returns the associated weight.
-    pub fn weight(&self) -> Weight { self.weight }
-
-    /// Returns the associated waste.
-    pub fn waste(&self) -> SignedAmount { SignedAmount::from_sat(self.waste).unwrap() }
-
-    /// Returns the calculated effective value.
-    pub fn effective_value(&self) -> Amount { Amount::from_sat(self.effective_value).unwrap() }
-
-    /// Returns the calculated effective value using the native type.
-    pub fn effective_value_raw(&self) -> u64 { self.effective_value }
-
-    /// Returns the calculated waste using the native type.
-    pub fn waste_raw(&self) -> i64 { self.waste }
-
-    fn positive_effective_value(fee_rate: FeeRate, weight: Weight, value: Amount) -> Option<u64> {
-        if let Some(eff_value) = effective_value(fee_rate, weight, value) {
-            if let Ok(unsigned) = eff_value.to_unsigned() {
-                return Some(unsigned.to_sat());
-            }
-        }
-
-        None
-    }
-
-    fn calculate_waste(fee: SignedAmount, long_term_fee: SignedAmount) -> i64 {
-        fee.to_sat() - long_term_fee.to_sat()
+    /// eff_value
+    fn effective_value(&self) -> Amount {
+        let fee = self.feerate().to_fee(self.weight());
+        let eff_value = (self.value() - fee).unwrap_or(Amount::ZERO);
+        eff_value
     }
 }
 
-impl Ord for WeightedUtxo {
+use std::cmp::Ordering;
+
+impl Eq for dyn 'static + WeightedUtxo {} 
+
+impl PartialEq for dyn 'static + WeightedUtxo {
+    fn eq(&self, other: &Self) -> bool { true }
+} 
+
+impl Ord for dyn 'static + WeightedUtxo {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.effective_value.cmp(&self.effective_value).then(self.weight.cmp(&other.weight))
+        other.effective_value().cmp(&self.effective_value()).then(self.weight().cmp(&other.weight()))
     }
 }
 
-impl PartialOrd for WeightedUtxo {
+impl PartialOrd for dyn 'static + WeightedUtxo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
