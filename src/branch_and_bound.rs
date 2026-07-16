@@ -9,13 +9,27 @@ use bitcoin_units::{Amount, FeeRate, Weight};
 
 use crate::OverflowError::{Addition, Subtraction};
 use crate::SelectionError::{
-    InsufficentFunds, Overflow,
+    InsufficentFunds, IterationLimitReached, MaxWeightExceeded, Overflow, SolutionNotFound,
 };
 use crate::WeightedUtxo;
 
 // Total_Tries in Core:
 // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
 pub const ITERATION_LIMIT: u32 = 100_000;
+
+fn calculate_waste(weight: Weight, fee_rate: FeeRate, lt_fee_rate: FeeRate) -> i64 {
+    let fee = fee_rate.to_fee(weight).to_signed();
+    let lt_fee = lt_fee_rate.to_fee(weight).to_signed();
+
+    fee.to_sat() - lt_fee.to_sat()
+}
+
+fn is_fee_expensive(weight: Weight, fee_rate: FeeRate, lt_fee_rate: FeeRate) -> bool {
+    let fee = fee_rate.to_fee(weight).to_signed();
+    let lt_fee = lt_fee_rate.to_fee(weight).to_signed();
+
+    fee > lt_fee
+}
 
 /// Deterministic depth first branch and bound search for a changeless solution.
 ///
@@ -149,37 +163,199 @@ pub fn branch_and_bound<'a, T: WeightedUtxo>(
     max_weight: Weight,
     fee_rate: FeeRate,
     long_term_fee_rate: FeeRate,
-    weighted_utxos: &[T],
-) -> Result<(u32, Vec<&'a WeightedUtxo>), SelectionError> {
-    Ok((0, vec![]))
+    weighted_utxos: &'a mut [T],
+) -> Result<(u32, Vec<&'a T> ), SelectionError> {
+    let mut iteration = 0;
+    let mut index = 0;
+    let mut max_tx_weight_exceeded = false;
+    let mut backtrack;
+
+    let mut value = 0;
+    let mut weight = Weight::ZERO;
+
+    let mut current_waste: i64 = 0;
+    // cast ok, MAX_MONEY < i64::MAX
+    let mut best_waste: i64 = Amount::MAX_MONEY.to_sat() as i64;
+
+    let mut index_selection: Vec<usize> = vec![];
+    let mut best_selection: Vec<usize> = vec![];
+
+    let upper_bound = target.checked_add(cost_of_change).ok_or(Overflow(Addition))?.to_sat();
+    let target = target.to_sat();
+
+    let mut available_value: u64 = weighted_utxos
+        .into_iter()
+        .map(|u| u.effective_value())
+        .try_fold(Amount::ZERO, Amount::checked_add)
+        .ok_or(Overflow(Addition))?
+        .to_sat();
+
+    let _ = weighted_utxos
+        .into_iter()
+        .map(|u| u.weight())
+        .try_fold(Weight::ZERO, Weight::checked_add)
+        .ok_or(Overflow(Addition))?;
+
+    // descending sort by effective_value, ascending sort by waste.
+    weighted_utxos.sort_by(|a, b| {
+        b.effective_value().cmp(&a.effective_value()).then(
+            calculate_waste(a.weight(), a.fee_rate(), long_term_fee_rate).cmp(&calculate_waste( a.weight(), a.fee_rate(), long_term_fee_rate )))
+    });
+
+    if available_value < target {
+        return Err(InsufficentFunds);
+    }
+
+    while iteration < ITERATION_LIMIT {
+        backtrack = false;
+
+        // * If any of the conditions are met, backtrack.
+        //
+        // unchecked_add is used here for performance.  Before entering the search loop, all
+        // utxos are summed and checked for overflow.  Since there was no overflow then, any
+        // subset of addition will not overflow.
+        if available_value + value < target
+            // Provides an upper bound on the excess value that is permissible.
+            // Since value is lost when we create a change output due to increasing the size of the
+            // transaction by an output (the change output), we accept solutions that may be
+            // larger than the target.  The excess is added to the solutions waste score.
+            // However, values greater than value + cost_of_change are not considered.
+            //
+            // This creates a range of possible solutions where;
+            // range = (target, target + cost_of_change]
+            //
+            // That is, the range includes solutions that exactly equal the target up to but not
+            // including values greater than target + cost_of_change.
+            || value > upper_bound
+            // if current_waste > best_waste, then backtrack.  However, only backtrack if
+            // it's high fee_rate environment.  During low fee environments, a utxo may
+            // have negative waste, therefore adding more utxos in such an environment
+            // may still result in reduced waste.
+            || current_waste > best_waste && is_fee_expensive(weighted_utxos[0].weight(), weighted_utxos[0].fee_rate(), long_term_fee_rate)
+        {
+            backtrack = true;
+        } else if weight > max_weight {
+            max_tx_weight_exceeded = true;
+            backtrack = true;
+        }
+        // * value meets or exceeds the target.
+        //   Record the solution and the waste then continue.
+        else if value >= target {
+            backtrack = true;
+
+            // cast ok, the value and target range is (0..MAX_MONEY).
+            let waste: i64 =
+                (value as i64).checked_sub(target as i64).ok_or(Overflow(Subtraction))?;
+            current_waste = current_waste.checked_add(waste).ok_or(Overflow(Addition))?;
+
+            // Check if index_selection is better than the previous known best, and
+            // update best_selection accordingly.
+            if current_waste <= best_waste {
+                best_selection = index_selection.clone();
+                best_waste = current_waste;
+            }
+
+            current_waste = current_waste.checked_sub(waste).ok_or(Overflow(Subtraction))?;
+        }
+        // * Backtrack
+        if backtrack {
+            if index_selection.is_empty() {
+                return index_to_utxo_list(
+                    iteration,
+                    best_selection,
+                    max_tx_weight_exceeded,
+                    weighted_utxos,
+                );
+            }
+
+            loop {
+                index -= 1;
+
+                if index <= *index_selection.last().unwrap() {
+                    break;
+                }
+
+                let eff_value = weighted_utxos[index].effective_value().to_sat();
+                available_value += eff_value;
+            }
+
+            assert_eq!(index, *index_selection.last().unwrap());
+            let eff_value = weighted_utxos[index].effective_value().to_sat();
+            let utxo_waste =
+                calculate_waste(weighted_utxos[index].weight(), weighted_utxos[index].fee_rate(), long_term_fee_rate );
+            let utxo_weight = weighted_utxos[index].weight();
+            current_waste = current_waste.checked_sub(utxo_waste).ok_or(Overflow(Subtraction))?;
+            value = value.checked_sub(eff_value).ok_or(Overflow(Addition))?;
+            weight -= utxo_weight;
+            index_selection.pop().unwrap();
+        }
+        // * Add next node to the inclusion branch.
+        else {
+            let eff_value = weighted_utxos[index].effective_value().to_sat();
+            let utxo_weight = weighted_utxos[index].weight();
+            let fee_rate = weighted_utxos[index].fee_rate();
+            let utxo_waste = calculate_waste(
+                utxo_weight,
+                weighted_utxos[index].fee_rate(),
+                long_term_fee_rate
+            );
+
+            // unchecked sub is used her for performance.
+            // The bounds for available_value are at most the sum of utxos
+            // and at least zero.
+            available_value -= eff_value;
+
+            // Check if we can omit the currently selected depending on if the last
+            // was omitted.  Therefore, check if index_selection has a previous one.
+            if index_selection.is_empty()
+                // Check if the previous UTXO was included.
+                || index - 1 == *index_selection.last().unwrap()
+                // Check if the previous UTXO has the same value has the previous one.
+                || weighted_utxos[index].effective_value().to_sat() != weighted_utxos[index - 1].effective_value().to_sat()
+            {
+                index_selection.push(index);
+                current_waste = current_waste.checked_add(utxo_waste).ok_or(Overflow(Addition))?;
+
+                // unchecked add is used here for performance.  Since the sum of all utxo values
+                // did not overflow, then any positive subset of the sum will not overflow.
+                value += eff_value;
+                weight += utxo_weight;
+            }
+        }
+
+        // no overflow is possible since the iteration count is bounded.
+        index += 1;
+        iteration += 1;
+    }
+
+    index_to_utxo_list(iteration, best_selection, max_tx_weight_exceeded, weighted_utxos)
 }
 
-// TODO
-//fn index_to_utxo_list<'a>(
-    //iterations: u32,
-    //index_list: Vec<usize>,
-    //max_tx_weight_exceeded: bool,
-    //wu: Vec<&'a WeightedUtxo>,
-//) -> Return<'a> {
-    //let mut result: Vec<_> = Vec::new();
+fn index_to_utxo_list<'a, T: WeightedUtxo>(
+    iterations: u32,
+    index_list: Vec<usize>,
+    max_tx_weight_exceeded: bool,
+    wu: &'a [T],
+) -> Result<(u32, Vec<&'a T> ), SelectionError> {
+    // TODO alloc of size wu
+    let mut result: Vec<&T> = Vec::new();
 
-    //for i in index_list {
-        //let wu = wu[i];
-        //result.push(wu);
-    //}
+    for i in index_list {
+        result.push(&wu[i]);
+    }
 
-    //if result.is_empty() {
-        //if iterations == ITERATION_LIMIT {
-            //Err(IterationLimitReached)
-        //} else if max_tx_weight_exceeded {
-            //Err(MaxWeightExceeded)
-        //} else {
-            //Err(SolutionNotFound)
-        //}
-    //} else {
-        //Ok((iterations, result))
-    //}
-//}
+    if result.is_empty() {
+        if iterations == ITERATION_LIMIT {
+            Err(IterationLimitReached)
+        } else if max_tx_weight_exceeded {
+            Err(MaxWeightExceeded)
+        } else {
+            Err(SolutionNotFound)
+        }
+    } else {
+        Ok((iterations, result))
+    }
+}
 
 #[cfg(test)]
 mod tests {

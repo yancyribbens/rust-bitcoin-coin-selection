@@ -13,12 +13,12 @@ pub trait WeightedUtxo {
     /// value.
     fn value(&self) -> Amount;    
 
-    /// feerate.
-    fn feerate(&self) -> FeeRate;
+    /// fee rate.
+    fn fee_rate(&self) -> FeeRate;
 
     /// eff_value
     fn effective_value(&self) -> Amount {
-        let fee = self.feerate().to_fee(self.weight());
+        let fee = self.fee_rate().to_fee(self.weight());
         let eff_value = (self.value() - fee).unwrap_or(Amount::ZERO);
         eff_value
     }
