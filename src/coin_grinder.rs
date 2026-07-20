@@ -152,6 +152,10 @@ pub fn coin_grinder<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::
         return Err(SolutionNotFound);
     }
 
+    if target == Amount::ZERO {
+        return Err(SolutionNotFound);
+    }
+
     let mut selection: Vec<usize> = vec![];
     let mut best_selection: Vec<usize> = vec![];
 
@@ -338,7 +342,7 @@ mod tests {
     use bitcoin_units::FeeRate;
 
     use super::*;
-    use crate::tests::{assert_ref_eq, parse_fee_rate, Selection};
+    use crate::tests::{assert_ref_eq, parse_fee_rate, effective_sum, weight_sum};
 
     #[derive(Debug)]
     pub struct TestCoinGrinder<'a> {
@@ -799,8 +803,7 @@ mod tests {
 
             let change_target = Amount::ZERO;
             let max_weight = Weight::MAX;
-            let target =
-                Selection::effective_value_sum(&min_weight_pool).unwrap_or(Amount::ZERO);
+            let target = effective_sum(&min_weight_pool).unwrap_or(Amount::ZERO);
             let result = coin_grinder(target, change_target, max_weight, &pool);
 
             match result {
@@ -811,8 +814,8 @@ mod tests {
                     assert!(i > 0);
                 }
                 Err(Overflow(_)) => {
-                    let value_sum = Selection::effective_value_sum(&pool);
-                    let weight_sum = Selection::weight_sum(&pool);
+                    let value_sum = effective_sum(&pool);
+                    let weight_sum = weight_sum(&pool);
                     assert!(value_sum.is_none() || weight_sum.is_none());
                 }
                 Err(SolutionNotFound) => assert!(min_weight_pool.is_empty()), 
@@ -841,7 +844,7 @@ mod tests {
                 Ok((i, utxos)) => {
                     assert!(i > 0);
                     let utxos: Vec<WeightedUtxo> = utxos.iter().map(|&u| u.clone()).collect();
-                    let eff_value_sum = Selection::effective_value_sum(&utxos).unwrap();
+                    let eff_value_sum = effective_sum(&utxos).unwrap();
                     assert!(eff_value_sum >= (target + change_target).unwrap());
                 }
                 Err(Overflow(_)) => {
