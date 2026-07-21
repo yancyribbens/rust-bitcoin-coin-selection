@@ -43,7 +43,7 @@ fn index_to_utxo_list<'a>(
     index_list: Vec<usize>,
     max_tx_weight_exceeded: bool,
     wu: Vec<&'a WeightedUtxo>,
-) -> Return<'a> {
+) -> Result<(u32, Vec<WeightedUtxo>), crate::SelectionError> {
     let mut result: Vec<_> = Vec::new();
 
     for i in index_list {
@@ -60,7 +60,8 @@ fn index_to_utxo_list<'a>(
             Err(SolutionNotFound)
         }
     } else {
-        Ok((iterations, result))
+        let r = result.into_iter().cloned().collect();
+        Ok((iterations, r))
     }
 }
 
@@ -124,7 +125,7 @@ pub fn coin_grinder<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::
     change_target: Amount,
     max_selection_weight: Weight,
     weighted_utxos: T,
-) -> Return<'a> {
+) -> Result<(u32, Vec<WeightedUtxo>), crate::SelectionError> {
     weighted_utxos
         .into_iter()
         .map(|u| u.weight())
