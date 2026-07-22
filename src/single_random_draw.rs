@@ -90,13 +90,17 @@ fn error_handler <T: Spendable> (
     iterations: u32,
     weight_exceeded: bool 
 ) -> crate::ReturnAlpha<'_, T> {
-    if weight_exceeded {
-        Err(MaxWeightExceeded)
-    } else if result.is_empty() {
-        Err(SolutionNotFound)
-    } else {
-        Ok((iterations, result))
+    println!("result len {:?}", result.len());
+
+    if result.is_empty() && weight_exceeded {
+        return Err(MaxWeightExceeded)
     }
+
+    if result.is_empty() {
+        return Err(SolutionNotFound)
+    }
+
+    Ok((iterations, result))
 }
 
 #[cfg(feature = "rand")]
@@ -115,7 +119,7 @@ fn srd_select<R: rand::Rng + ?Sized>(
     let mut weight_exceeded = false;
     let mut weight_total = Weight::ZERO;
 
-    let result;
+    let mut result = vec![];
     for w_utxo in weighted_utxos {
         iteration += 1;
         let effective_value = w_utxo.effective_value();
@@ -125,10 +129,8 @@ fn srd_select<R: rand::Rng + ?Sized>(
 
         let utxo_weight = w_utxo.weight();
         weight_total += utxo_weight;
-        println!("value_total {:?} eff_val {} weight {} total {}", value, effective_value, utxo_weight, weight_total);
 
         while weight_total > max_weight {
-            println!("weight exceeded");
             weight_exceeded = true;
 
             if let Some(utxo) = heap.pop() {
@@ -144,7 +146,6 @@ fn srd_select<R: rand::Rng + ?Sized>(
         }
     }
 
-    result = heap.iter().map(|u| u.index).collect();
     Ok((iteration, result, weight_exceeded))
 }
 
