@@ -157,7 +157,7 @@ mod tests {
 
     use super::*;
     use crate::single_random_draw::single_random_draw;
-    use crate::tests::{assert_ref_eq, effective_sum, parse_fee_rate, weight_sum};
+    use crate::tests::{assert_ref_eq, effective_sum, parse_fee_rate, weight_sum, Utxo};
     use crate::SelectionError::ProgramError;
 
     #[derive(Debug)]
@@ -180,7 +180,7 @@ mod tests {
             let max_weight = Weight::from_str(max_weight[0]).unwrap();
             let utxos = crate::tests::utxos_from_str(self.weighted_utxos, fee_rate, lt_fee_rate);
 
-            let result = single_random_draw(target, max_weight, &mut get_rng(), &utxos);
+            let result = single_random_draw(target, max_weight, fee_rate, &mut get_rng(), &utxos);
 
             match result {
                 Ok((iterations, inputs)) => {
@@ -376,27 +376,27 @@ mod tests {
             let init: Vec<(Amount, Weight)> = Vec::arbitrary(u)?;
             let fee_rate = FeeRate::arbitrary(u)?;
             let long_term_fee_rate = FeeRate::arbitrary(u)?;
-            let utxos: Vec<WeightedUtxo> = init
+            let utxos: Vec<Utxo> = init
                 .iter()
-                .filter_map(|i| WeightedUtxo::new(i.0, i.1, fee_rate, long_term_fee_rate))
+                .map(|i| Utxo { value: i.0, weight: i.1 })
                 .collect();
 
             let target = Amount::arbitrary(u)?;
             let max_weight = Weight::arbitrary(u)?;
 
             let result: Result<_, _> =
-                single_random_draw(target, max_weight, &mut get_rng(), &utxos);
+                single_random_draw(target, max_weight, fee_rate, &mut get_rng(), &utxos);
 
             match result {
                 Ok((i, utxos)) => {
                     assert!(i > 0);
                     //let u = utxos.into_iter().cloned().collect();
-                    crate::tests::assert_target_selection(&utxos, target, None);
+                    crate::tests::assert_target_selection(&utxos, fee_rate, target, None);
                 }
                 Err(InsufficentFunds) => {
                     assert!(
-                        effective_sum(&utxos).unwrap() < target
-                            || effective_sum(&utxos).unwrap() == Amount::ZERO
+                        effective_sum(&utxos, fee_rate).unwrap() < target
+                            || effective_sum(&utxos, fee_rate).unwrap() == Amount::ZERO
                     );
                 }
                 Err(crate::SelectionError::IterationLimitReached) => panic!("un-expected result"),
@@ -404,7 +404,7 @@ mod tests {
                     assert!(weight_sum(&utxos).unwrap() > max_weight);
                 }
                 Err(Overflow(_)) => {
-                    assert!(effective_sum(&utxos).is_none() || weight_sum(&utxos).is_none());
+                    assert!(effective_sum(&utxos, fee_rate).is_none() || weight_sum(&utxos).is_none());
                 }
                 Err(SolutionNotFound) => assert!(target == Amount::ZERO),
                 Err(ProgramError) => panic!("un-expected program error"),

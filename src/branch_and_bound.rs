@@ -353,7 +353,7 @@ mod tests {
     use bitcoin_units::{Amount, FeeRate, Weight};
 
     use super::*;
-    use crate::tests::{assert_ref_eq, effective_sum, parse_fee_rate, weight_sum};
+    use crate::tests::{assert_ref_eq, effective_sum, parse_fee_rate, weight_sum, Utxo};
     use crate::SelectionError::ProgramError;
     use crate::WeightedUtxo;
 
@@ -382,7 +382,7 @@ mod tests {
 
             let utxos = crate::tests::utxos_from_str(self.weighted_utxos, fee_rate, lt_fee_rate);
 
-            let result = branch_and_bound(target, cost_of_change, max_weight, &utxos);
+            let result = branch_and_bound(target, cost_of_change, max_weight, fee_rate, lt_fee_rate, &utxos);
 
             match result {
                 Ok((iterations, inputs)) => {
@@ -878,10 +878,10 @@ mod tests {
 
         let pool: Vec<_> = amts
             .into_iter()
-            .filter_map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate, lt_fee_rate))
+            .map(|a| Utxo { value: a, weight: Weight::ZERO })
             .collect();
 
-        let result = branch_and_bound(target, Amount::ONE_SAT, max_weight, &pool);
+        let result = branch_and_bound(target, Amount::ONE_SAT, max_weight, fee_rate, lt_fee_rate, &pool);
 
         match result {
             Err(IterationLimitReached) => {}
@@ -906,11 +906,14 @@ mod tests {
         let amts: Vec<_> = vals.map(Amount::from_sat_u32).collect();
         let pool: Vec<_> = amts
             .into_iter()
-            .filter_map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate, lt_fee_rate))
+            .map(|a| Utxo {
+                value: a,
+                weight: Weight::ZERO
+            })
             .collect();
 
         let result =
-            branch_and_bound(Amount::from_sat_u32(target), Amount::ONE_SAT, max_weight, &pool);
+            branch_and_bound(Amount::from_sat_u32(target), Amount::ONE_SAT, max_weight, fee_rate, lt_fee_rate, &pool);
 
         match result {
             Err(IterationLimitReached) => {}
@@ -939,11 +942,14 @@ mod tests {
         amts.push(Amount::from_sat_u32(target));
         let pool: Vec<_> = amts
             .into_iter()
-            .filter_map(|a| WeightedUtxo::new(a, Weight::ZERO, fee_rate, lt_fee_rate))
+            .map(|a| Utxo {
+                value: a,
+                weight: Weight::ZERO
+            })
             .collect();
 
         let (iterations, utxos) =
-            branch_and_bound(Amount::from_sat_u32(target), Amount::ONE_SAT, max_weight, &pool)
+            branch_and_bound(Amount::from_sat_u32(target), Amount::ONE_SAT, max_weight, fee_rate, lt_fee_rate, &pool)
                 .unwrap();
 
         assert_eq!(utxos.len(), 1);
@@ -960,40 +966,40 @@ mod tests {
             let max_weight = Weight::arbitrary(u)?;
 
             let init: Vec<(Amount, Weight, bool)> = Vec::arbitrary(u)?;
-            let expected_inputs: Vec<WeightedUtxo> = init
+            let expected_inputs: Vec<Utxo> = init
                 .iter()
                 .filter(|(_, _, include)| *include)
-                .filter_map(|(amt, weight, _)| {
-                    WeightedUtxo::new(*amt, *weight, fee_rate, long_term_fee_rate)
+                .map(|(amt, weight, _)| {
+                    Utxo { value: *amt, weight: *weight }
                 })
                 .collect();
 
-            let utxos: Vec<WeightedUtxo> = init
+            let utxos: Vec<Utxo> = init
                 .into_iter()
-                .filter_map(|(amt, weight, _)| {
-                    WeightedUtxo::new(amt, weight, fee_rate, long_term_fee_rate)
+                .map(|(amt, weight, _)| {
+                    Utxo { value: amt, weight }
                 })
                 .collect();
 
-            let target = effective_sum(&expected_inputs).unwrap_or(Amount::ZERO);
-            let result = branch_and_bound(target, cost_of_change, max_weight, &utxos);
+            let target = effective_sum(&expected_inputs, fee_rate).unwrap_or(Amount::ZERO);
+            let result = branch_and_bound(target, cost_of_change, max_weight, fee_rate, long_term_fee_rate, &utxos);
 
             match result {
                 Ok((i, utxos)) => {
-                    let u: Vec<WeightedUtxo> = utxos.into_iter().cloned().collect();
+                    let u: Vec<Utxo> = utxos.into_iter().cloned().collect();
                     assert!(i > 0 || target == Amount::ZERO);
-                    assert!(effective_sum(&u).unwrap() >= target);
+                    assert!(effective_sum(&u, fee_rate).unwrap() >= target);
                     assert!(
-                        effective_sum(&u).unwrap() <= target.checked_add(cost_of_change).unwrap()
+                        effective_sum(&u, fee_rate).unwrap() <= target.checked_add(cost_of_change).unwrap()
                     )
                 }
                 Err(InsufficentFunds) => {
-                    assert!(effective_sum(&utxos).unwrap() < target);
+                    assert!(effective_sum(&utxos, fee_rate).unwrap() < target);
                 }
                 Err(IterationLimitReached) => {}
                 Err(Overflow(_)) => {
                     assert!(
-                        effective_sum(&utxos).is_none()
+                        effective_sum(&utxos, fee_rate).is_none()
                             || weight_sum(&utxos).is_none()
                             || (target + cost_of_change).is_error()
                     );
@@ -1023,23 +1029,23 @@ mod tests {
             let init: Vec<(Amount, Weight)> = Vec::arbitrary(u)?;
             let candidate_utxos: Vec<_> = init
                 .iter()
-                .filter_map(|i| WeightedUtxo::new(i.0, i.1, fee_rate_a, fee_rate_b))
+                .map(|i| Utxo { value: i.0, weight: i.1 })
                 .collect();
 
-            let result_a = branch_and_bound(target, cost_of_change, max_weight, &candidate_utxos);
+            let result_a = branch_and_bound(target, cost_of_change, max_weight, fee_rate_a, fee_rate_b, &candidate_utxos);
 
             let utxo_selection_attributes =
                 candidate_utxos.clone().into_iter().map(|u| (u.value(), u.weight()));
             // swap lt_fee_rate and fee_rate position.
-            let utxos_b: Vec<WeightedUtxo> = utxo_selection_attributes
-                .filter_map(|(amt, weight)| WeightedUtxo::new(amt, weight, fee_rate_b, fee_rate_a))
+            let utxos_b: Vec<Utxo> = utxo_selection_attributes
+                .map(|(amt, weight)| Utxo { value: amt, weight })
                 .collect();
-            let result_b = branch_and_bound(target, cost_of_change, max_weight, &utxos_b);
+            let result_b = branch_and_bound(target, cost_of_change, max_weight, fee_rate_b, fee_rate_a, &utxos_b);
 
             if let Ok((_, utxos_a)) = result_a {
                 if let Ok((_, utxos_b)) = result_b {
-                    let ua: Vec<WeightedUtxo> = utxos_a.into_iter().cloned().collect();
-                    let ub: Vec<WeightedUtxo> = utxos_b.into_iter().cloned().collect();
+                    let ua: Vec<Utxo> = utxos_a.into_iter().cloned().collect();
+                    let ub: Vec<Utxo> = utxos_b.into_iter().cloned().collect();
                     let weight_sum_a = weight_sum(&ua);
                     let weight_sum_b = weight_sum(&ub);
 
