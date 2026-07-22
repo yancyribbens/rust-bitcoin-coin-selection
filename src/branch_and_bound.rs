@@ -4,13 +4,13 @@
 //!
 //! This module introduces the Branch and Bound Coin-Selection Algorithm.
 
-use bitcoin_units::{Amount, Weight};
+use bitcoin_units::{Amount, FeeRate, Weight};
 
 use crate::OverflowError::{Addition, Subtraction};
 use crate::SelectionError::{
     InsufficentFunds, IterationLimitReached, MaxWeightExceeded, Overflow, SolutionNotFound,
 };
-use crate::{Return, WeightedUtxo};
+use crate::{Spendable, WeightedUtxo};
 
 // Total_Tries in Core:
 // https://github.com/bitcoin/bitcoin/blob/1d9da8da309d1dbf9aef15eb8dc43b4a2dc3d309/src/wallet/coinselection.cpp#L74
@@ -142,31 +142,20 @@ pub const ITERATION_LIMIT: u32 = 100_000;
 //
 // If either 1 or 2 is true, we consider the current search path no longer viable to continue.  In
 // such a case, backtrack to start a new search path.
-pub fn branch_and_bound<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::Copy>(
+pub fn branch_and_bound<T: Spendable>(
     target: Amount,
     cost_of_change: Amount,
     max_weight: Weight,
-    weighted_utxos: T,
-) -> Return<'a> {
-    let mut iteration = 0;
-    let mut index = 0;
-    let mut max_tx_weight_exceeded = false;
-    let mut backtrack;
+    fee_rate: FeeRate,
+    long_term_fee_rate: FeeRate,
+    spendable_coins: &[T],
+) -> crate::ReturnAlpha<'_, T> {
+    let mut weighted_utxos: Vec<WeightedUtxo> = spendable_coins.iter().map(|coin| {
+        WeightedUtxo::new(coin.value(), coin.weight(), fee_rate, long_term_fee_rate).unwrap()
+    }).collect();
 
-    let mut value = 0;
-    let mut weight = Weight::ZERO;
-
-    let mut current_waste: i64 = 0;
-    // cast ok, MAX_MONEY < i64::MAX
-    let mut best_waste: i64 = Amount::MAX_MONEY.to_sat() as i64;
-
-    let mut index_selection: Vec<usize> = vec![];
-    let mut best_selection: Vec<usize> = vec![];
-
-    let upper_bound = target.checked_add(cost_of_change).ok_or(Overflow(Addition))?.to_sat();
-    let target = target.to_sat();
-
-    let mut available_value: u64 = weighted_utxos
+    let available_value: u64 = weighted_utxos
+        .clone()
         .into_iter()
         .map(|u| u.effective_value())
         .try_fold(Amount::ZERO, Amount::checked_add)
@@ -174,21 +163,71 @@ pub fn branch_and_bound<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::mark
         .to_sat();
 
     let _ = weighted_utxos
+        .clone()
         .into_iter()
         .map(|u| u.weight())
         .try_fold(Weight::ZERO, Weight::checked_add)
         .ok_or(Overflow(Addition))?;
 
-    let mut weighted_utxos: Vec<_> = weighted_utxos.into_iter().collect();
+    let bound = target.checked_add(cost_of_change).ok_or(Overflow(Addition))?.to_sat();
+    let target = target.to_sat();
+    if available_value < target {
+        return Err(InsufficentFunds);
+    }
 
     // descending sort by effective_value, ascending sort by waste.
     weighted_utxos.sort_by(|a, b| {
         b.effective_value().cmp(&a.effective_value()).then(a.waste().cmp(&b.waste()))
     });
 
-    if available_value < target {
-        return Err(InsufficentFunds);
+    let result = bnb_select(available_value, target, bound, max_weight, &weighted_utxos);
+    match result {
+        Ok((iters, selected, weight_exceeded)) => {
+            let result = selected.into_iter().map(|i| &spendable_coins[i]).collect();
+            error_handler(result, iters, weight_exceeded)
+        },
+        Err(e) => Err(e)
     }
+}
+
+fn error_handler <T: Spendable> (
+    result: Vec<&T>,
+    iterations: u32,
+    weight_exceeded: bool 
+) -> crate::ReturnAlpha<'_, T> {
+    if result.is_empty() {
+        if iterations == ITERATION_LIMIT {
+            Err(IterationLimitReached)
+        } else if weight_exceeded {
+            Err(MaxWeightExceeded)
+        } else {
+            Err(SolutionNotFound)
+        }
+    } else {
+        Ok((iterations, result))
+    }
+}
+
+fn bnb_select<'a, T: IntoIterator<Item = &'a WeightedUtxo>> (
+    mut available_value: u64,
+    target: u64,
+    upper_bound: u64,
+    max_weight: Weight,
+    weighted_utxos: T) 
+-> Result<(u32, Vec<usize>, bool), crate::SelectionError>  {
+    let mut index_selection: Vec<usize> = vec![];
+    let mut iteration = 0;
+    let mut index = 0;
+    let mut max_tx_weight_exceeded = false;
+    let mut backtrack;
+    let mut value = 0;
+    let mut weight = Weight::ZERO;
+    let mut current_waste: i64 = 0;
+    // cast ok, MAX_MONEY < i64::MAX
+    let mut best_waste: i64 = Amount::MAX_MONEY.to_sat() as i64;
+    let mut best_selection: Vec<usize> = vec![];
+
+    let weighted_utxos: Vec<_> = weighted_utxos.into_iter().collect();
 
     while iteration < ITERATION_LIMIT {
         backtrack = false;
@@ -244,12 +283,7 @@ pub fn branch_and_bound<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::mark
         // * Backtrack
         if backtrack {
             if index_selection.is_empty() {
-                return index_to_utxo_list(
-                    iteration,
-                    best_selection,
-                    max_tx_weight_exceeded,
-                    weighted_utxos,
-                );
+                return Ok((iteration, best_selection, max_tx_weight_exceeded));
             }
 
             loop {
@@ -306,33 +340,7 @@ pub fn branch_and_bound<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::mark
         iteration += 1;
     }
 
-    index_to_utxo_list(iteration, best_selection, max_tx_weight_exceeded, weighted_utxos)
-}
-
-fn index_to_utxo_list(
-    iterations: u32,
-    index_list: Vec<usize>,
-    max_tx_weight_exceeded: bool,
-    wu: Vec<&WeightedUtxo>,
-) -> Return<'_> {
-    let mut result: Vec<_> = Vec::new();
-
-    for i in index_list {
-        let wu = wu[i];
-        result.push(wu);
-    }
-
-    if result.is_empty() {
-        if iterations == ITERATION_LIMIT {
-            Err(IterationLimitReached)
-        } else if max_tx_weight_exceeded {
-            Err(MaxWeightExceeded)
-        } else {
-            Err(SolutionNotFound)
-        }
-    } else {
-        Ok((iterations, result))
-    }
+    Ok((iteration, best_selection, max_tx_weight_exceeded))
 }
 
 #[cfg(test)]

@@ -6,14 +6,14 @@
 
 use std::collections::BinaryHeap;
 
-use bitcoin_units::{Amount, Weight};
+use bitcoin_units::{Amount, FeeRate, Weight};
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
 use rand::seq::SliceRandom;
 
 use crate::OverflowError::Addition;
 use crate::SelectionError::{InsufficentFunds, MaxWeightExceeded, Overflow, SolutionNotFound};
-use crate::{Return, WeightedUtxo};
+use crate::{ReturnAlpha, Spendable, WeightedUtxo};
 
 /// Select coins by Single Random Draw (SRD).
 ///
@@ -40,20 +40,28 @@ use crate::{Return, WeightedUtxo};
 pub fn single_random_draw<
     'a,
     R: rand::Rng + ?Sized,
-    T: IntoIterator<Item = &'a WeightedUtxo> + std::marker::Copy,
+    T: Spendable,
 >(
     target: Amount,
     max_weight: Weight,
+    fee_rate: FeeRate,
     rng: &mut R,
-    weighted_utxos: T,
-) -> Return<'a> {
-    let _ = weighted_utxos
-        .into_iter()
+    spendable_coins: &'a [T],
+) -> ReturnAlpha<'a, T> {
+    let _ = spendable_coins 
+        .iter()
         .map(|u| u.weight())
         .try_fold(Weight::ZERO, Weight::checked_add)
         .ok_or(Overflow(Addition))?;
 
-    let available_value = weighted_utxos
+    let utxos: Vec<WeightedUtxo> = spendable_coins
+        .iter()
+        .map(|coin| {
+            WeightedUtxo::new(coin.value(), coin.weight(), fee_rate, FeeRate::ZERO).unwrap()
+    }).collect();
+
+    let available_value = utxos 
+        .clone()
         .into_iter()
         .map(|u| u.effective_value())
         .try_fold(Amount::ZERO, Amount::checked_add)
@@ -63,19 +71,55 @@ pub fn single_random_draw<
         return Err(InsufficentFunds);
     }
 
-    let mut origin: Vec<_> = weighted_utxos.into_iter().collect();
-    origin.shuffle(rng);
-    let mut heap: BinaryHeap<&WeightedUtxo> = BinaryHeap::new();
+    let result = srd_select(target, max_weight, rng, &utxos);
 
+    match result {
+        Ok((iters, selected, weight_exceeded)) => {
+            let result = selected.into_iter().map(|i| &spendable_coins[i]).collect();
+            error_handler(result, iters, weight_exceeded)
+        },
+        Err(e) => Err(e)
+    }
+}
+
+#[cfg(feature = "rand")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
+fn error_handler <T: Spendable> (
+    result: Vec<&T>,
+    iterations: u32,
+    weight_exceeded: bool 
+) -> crate::ReturnAlpha<'_, T> {
+    if weight_exceeded {
+        Err(MaxWeightExceeded)
+    } else if result.is_empty() {
+        Err(SolutionNotFound)
+    } else {
+        Ok((iterations, result))
+    }
+}
+
+#[cfg(feature = "rand")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
+fn srd_select<R: rand::Rng + ?Sized>(
+    target: Amount,
+    max_weight: Weight,
+    rng: &mut R,
+    weighted_utxos: &[WeightedUtxo]) -> Result<(u32, Vec<usize>, bool), crate::SelectionError>  {
+
+    let mut indexed_utxos: Vec<_> = weighted_utxos.iter().enumerate().collect();
+    indexed_utxos.shuffle(rng); 
+
+    let mut heap: BinaryHeap<(usize, WeightedUtxo)> = BinaryHeap::new();
     let mut value = Amount::ZERO;
-
     let mut iteration = 0;
-    let mut max_tx_weight_exceeded = false;
+    let mut weight_exceeded = false;
     let mut weight_total = Weight::ZERO;
-    for w_utxo in origin {
+
+    let result;
+    for (i, w_utxo) in indexed_utxos {
         iteration += 1;
         let effective_value = w_utxo.effective_value();
-        heap.push(w_utxo);
+        heap.push((i, w_utxo.clone()));
 
         value = (value + effective_value).unwrap();
 
@@ -83,9 +127,9 @@ pub fn single_random_draw<
         weight_total += utxo_weight;
 
         while weight_total > max_weight {
-            max_tx_weight_exceeded = true;
+            weight_exceeded = true;
 
-            if let Some(utxo) = heap.pop() {
+            if let Some((_, utxo)) = heap.pop() {
                 let effective_value = utxo.effective_value();
                 value = (value - effective_value).unwrap();
                 weight_total -= utxo.weight();
@@ -93,16 +137,13 @@ pub fn single_random_draw<
         }
 
         if value >= target {
-            let result: Vec<_> = heap.into_sorted_vec();
-            return Ok((iteration, result));
+            result = heap.iter().map(|(i, _u)| *i).collect();
+            return Ok((iteration, result, weight_exceeded));
         }
     }
 
-    if max_tx_weight_exceeded {
-        Err(MaxWeightExceeded)
-    } else {
-        Err(SolutionNotFound)
-    }
+    result = heap.iter().map(|(i, _u)| *i).collect();
+    Ok((iteration, result, weight_exceeded))
 }
 
 #[cfg(test)]

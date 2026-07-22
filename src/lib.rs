@@ -36,6 +36,17 @@ pub use crate::single_random_draw::single_random_draw;
 
 pub(crate) type Return<'a> = Result<(u32, Vec<&'a WeightedUtxo>), SelectionError>;
 
+pub(crate) type ReturnAlpha<'a, T> = Result<(u32, Vec<&'a T>), SelectionError>;
+
+/// Coin Selection Behavior.
+pub trait Spendable {
+    /// The estimated UTXO weight.
+    fn weight(&self) -> Weight;
+
+    /// The value of the UTXO.
+    fn value(&self) -> Amount;    
+}
+
 /// Computes the value of an output accounting for the cost to spend it.
 ///
 /// The effective_value can be calculated as: value - (fee_rate * weight).
@@ -85,16 +96,19 @@ pub(crate) fn effective_value(
 /// one found.
 #[cfg(feature = "rand")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rand")))]
-pub fn select_coins<'a>(
+pub fn select_coins<T: Spendable>(
     target: Amount,
     cost_of_change: Amount,
     max_weight: Weight,
-    weighted_utxos: &'a [WeightedUtxo],
-) -> Return<'a> {
-    let bnb_result = branch_and_bound(target, cost_of_change, max_weight, weighted_utxos);
+    fee_rate: FeeRate,
+    long_term_fee_rate: FeeRate,
+    spendable_coins: &[T],
+) -> Result<(u32, Vec<&T>), SelectionError> {
+
+    let bnb_result = branch_and_bound(target, cost_of_change, max_weight, fee_rate, long_term_fee_rate, spendable_coins);
 
     if bnb_result.is_err() {
-        single_random_draw(target, max_weight, &mut thread_rng(), weighted_utxos)
+        single_random_draw(target, max_weight, fee_rate, &mut thread_rng(), spendable_coins)
     } else {
         bnb_result
     }
