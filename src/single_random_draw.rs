@@ -125,8 +125,10 @@ fn srd_select<R: rand::Rng + ?Sized>(
 
         let utxo_weight = w_utxo.weight();
         weight_total += utxo_weight;
+        println!("value_total {:?} eff_val {} weight {} total {}", value, effective_value, utxo_weight, weight_total);
 
         while weight_total > max_weight {
+            println!("weight exceeded");
             weight_exceeded = true;
 
             if let Some(utxo) = heap.pop() {

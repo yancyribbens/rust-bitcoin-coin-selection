@@ -132,7 +132,7 @@ mod tests {
     }
 
     impl Spendable for Utxo {
-        fn weight(&self) -> Weight { Weight::from_wu(230) }
+        fn weight(&self) -> Weight { self.weight }
         fn value(&self) -> Amount { self.value }
     }
 
