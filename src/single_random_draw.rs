@@ -54,7 +54,7 @@ pub fn single_random_draw<
         .try_fold(Weight::ZERO, Weight::checked_add)
         .ok_or(Overflow(Addition))?;
 
-    let utxos: Vec<WeightedUtxo> = spendable_coins
+    let mut utxos: Vec<WeightedUtxo> = spendable_coins
         .iter()
         .enumerate()
         .map(|(index, coin)| {
@@ -72,7 +72,7 @@ pub fn single_random_draw<
         return Err(InsufficentFunds);
     }
 
-    let result = srd_select(target, max_weight, rng, &utxos);
+    let result = srd_select(target, max_weight, rng, &mut utxos);
 
     match result {
         Ok((iters, selected, weight_exceeded)) => {
@@ -105,22 +105,21 @@ fn srd_select<R: rand::Rng + ?Sized>(
     target: Amount,
     max_weight: Weight,
     rng: &mut R,
-    weighted_utxos: &[WeightedUtxo]) -> Result<(u32, Vec<usize>, bool), crate::SelectionError>  {
+    weighted_utxos: &mut [WeightedUtxo]) -> Result<(u32, Vec<usize>, bool), crate::SelectionError>  {
 
-    let mut indexed_utxos: Vec<_> = weighted_utxos.iter().enumerate().collect();
-    indexed_utxos.shuffle(rng); 
+    weighted_utxos.shuffle(rng); 
 
-    let mut heap: BinaryHeap<(usize, WeightedUtxo)> = BinaryHeap::new();
+    let mut heap: BinaryHeap<WeightedUtxo> = BinaryHeap::new();
     let mut value = Amount::ZERO;
     let mut iteration = 0;
     let mut weight_exceeded = false;
     let mut weight_total = Weight::ZERO;
 
     let result;
-    for (i, w_utxo) in indexed_utxos {
+    for w_utxo in weighted_utxos {
         iteration += 1;
         let effective_value = w_utxo.effective_value();
-        heap.push((i, w_utxo.clone()));
+        heap.push(w_utxo.clone());
 
         value = (value + effective_value).unwrap();
 
@@ -130,7 +129,7 @@ fn srd_select<R: rand::Rng + ?Sized>(
         while weight_total > max_weight {
             weight_exceeded = true;
 
-            if let Some((_, utxo)) = heap.pop() {
+            if let Some(utxo) = heap.pop() {
                 let effective_value = utxo.effective_value();
                 value = (value - effective_value).unwrap();
                 weight_total -= utxo.weight();
@@ -138,12 +137,12 @@ fn srd_select<R: rand::Rng + ?Sized>(
         }
 
         if value >= target {
-            result = heap.iter().map(|(i, _u)| *i).collect();
+            result = heap.iter().map(|u| u.index).collect();
             return Ok((iteration, result, weight_exceeded));
         }
     }
 
-    result = heap.iter().map(|(i, _u)| *i).collect();
+    result = heap.iter().map(|u| u.index).collect();
     Ok((iteration, result, weight_exceeded))
 }
 
@@ -233,7 +232,7 @@ mod tests {
 
     #[test]
     fn select_coins_srd_all_solution() {
-        assert_coin_select("2.5 cBTC", 2, &["2 cBTC/204 wu", "1 cBTC/204 wu"]);
+        assert_coin_select("2.5 cBTC", 2, &["1 cBTC/204 wu", "2 cBTC/204 wu"]);
     }
 
     #[test]
@@ -283,7 +282,7 @@ mod tests {
             fee_rate: "10 sat/kwu",
             max_weight: "40000 wu",
             weighted_utxos: &["1 cBTC/68 vB", "2 cBTC/68 vB"],
-            expected_utxos: &["2 cBTC/68 vB", "1 cBTC/68 vB"],
+            expected_utxos: &["1 cBTC/68 vB", "2 cBTC/68 vB"],
             expected_error: None,
             expected_iterations: 2,
         }
@@ -328,7 +327,7 @@ mod tests {
             weighted_utxos: &["e(3 cBTC)/68 vB", "e(5 cBTC)/10000 vB", "e(9 cBTC)/68 vB"],
             expected_utxos: &[],
             expected_error: Some(MaxWeightExceeded),
-            expected_iterations: 5,
+            expected_iterations: 3,
         }
         .assert();
     }
