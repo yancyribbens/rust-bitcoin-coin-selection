@@ -56,8 +56,9 @@ pub fn single_random_draw<
 
     let utxos: Vec<WeightedUtxo> = spendable_coins
         .iter()
-        .map(|coin| {
-            WeightedUtxo::new(coin.value(), coin.weight(), fee_rate, FeeRate::ZERO).unwrap()
+        .enumerate()
+        .map(|(index, coin)| {
+            WeightedUtxo::new(coin.value(), coin.weight(), fee_rate, FeeRate::ZERO, index).unwrap()
     }).collect();
 
     let available_value = utxos 

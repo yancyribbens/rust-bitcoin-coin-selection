@@ -150,8 +150,16 @@ pub fn branch_and_bound<T: Spendable>(
     long_term_fee_rate: FeeRate,
     spendable_coins: &[T],
 ) -> crate::ReturnAlpha<'_, T> {
-    let mut weighted_utxos: Vec<WeightedUtxo> = spendable_coins.iter().map(|coin| {
-        WeightedUtxo::new(coin.value(), coin.weight(), fee_rate, long_term_fee_rate).unwrap()
+    let mut weighted_utxos: Vec<WeightedUtxo> = spendable_coins
+        .iter()
+        .enumerate()
+        .map(|(index, coin)| { WeightedUtxo::new(
+                coin.value(),
+                coin.weight(),
+                fee_rate,
+                long_term_fee_rate,
+                index
+                ).unwrap()
     }).collect();
 
     let available_value: u64 = weighted_utxos
@@ -183,7 +191,8 @@ pub fn branch_and_bound<T: Spendable>(
     let result = bnb_select(available_value, target, bound, max_weight, &weighted_utxos);
     match result {
         Ok((iters, selected, weight_exceeded)) => {
-            let result = selected.into_iter().map(|i| &spendable_coins[i]).collect();
+            let result = selected
+                .into_iter().map(|i| weighted_utxos[i].index).map(|i| &spendable_coins[i]).collect();
             error_handler(result, iters, weight_exceeded)
         },
         Err(e) => Err(e)
