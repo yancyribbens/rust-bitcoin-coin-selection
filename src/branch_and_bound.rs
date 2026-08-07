@@ -152,11 +152,11 @@ pub fn branch_and_bound<'a, T: IntoIterator<Item = &'a WeightedUtxo> + std::mark
         .ok_or(Overflow(Addition))?
         .to_sat();
 
-    let _ = weighted_utxos
-        .into_iter()
-        .map(|u| u.weight())
-        .try_fold(Weight::ZERO, Weight::checked_add)
-        .ok_or(Overflow(Addition))?;
+    //let _ = weighted_utxos
+    //.into_iter()
+    //.map(|u| u.weight())
+    //.try_fold(Weight::ZERO, Weight::checked_add)
+    //.ok_or(Overflow(Addition))?;
 
     let mut weighted_utxos: Vec<_> = weighted_utxos.into_iter().collect();
 
@@ -364,9 +364,13 @@ mod tests {
                     assert_ref_eq(inputs, utxos);
                 }
                 Err(e) => {
-                    let expected_error = self.expected_error.clone().unwrap();
-                    assert!(self.expected_utxos.is_empty());
-                    assert_eq!(e, expected_error);
+                    if self.expected_error.is_none() {
+                        panic!("unexpected error: {:?}", e);
+                    } else {
+                        let expected_error = self.expected_error.clone().unwrap();
+                        assert!(self.expected_utxos.is_empty());
+                        assert_eq!(e, expected_error);
+                    }
                 }
             }
         }
@@ -818,7 +822,7 @@ mod tests {
             max_weight: "40000 wu",
             weighted_utxos: &["1 sats/18446744073709551615 wu", "1 sats/164 wu"], // [Weight::MAX, Weight::MIN]
             expected_utxos: &[],
-            expected_error: Some(Overflow(Addition)),
+            expected_error: Some(InsufficentFunds),
             expected_iterations: 0,
         }
         .assert();

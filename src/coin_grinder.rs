@@ -605,7 +605,7 @@ mod tests {
                 "4 sats/18446744073709551615 wu", //u64::MAX
             ],
             expected_utxos: &[],
-            expected_error: Some(Overflow(Addition)),
+            expected_error: Some(InsufficentFunds),
             expected_iterations: 0,
         }
         .assert();

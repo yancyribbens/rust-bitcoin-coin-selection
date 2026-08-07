@@ -28,6 +28,12 @@ impl WeightedUtxo {
     ///
     /// 32 byte txid, 4 byte output index, 1 byte scriptSig, 4 byte sequence.
     pub const MIN_WEIGHT: Weight = Weight::from_vb_unchecked(41);
+    /// Upper bound on how large a UTXO could be.
+    ///
+    /// The maximum allowed size for a serialized block, in bytes (only for buffer size limits).
+    /// See also `MAX_BLOCK_SERIALIZED_SIZE` in rust-bitcoin.  This upper bound is used to protect
+    /// against possible overflow when summing weights.
+    pub const MAX_WEIGHT: Weight = Weight::from_vb_unchecked(4_000_000);
 
     /// Creates a new `WeightedUtxo`.
     pub fn new(
@@ -36,7 +42,7 @@ impl WeightedUtxo {
         fee_rate: FeeRate,
         long_term_fee_rate: FeeRate,
     ) -> Option<WeightedUtxo> {
-        if weight < Self::MIN_WEIGHT {
+        if weight < Self::MIN_WEIGHT || weight > Self::MAX_WEIGHT {
             None
         } else if let Ok(eff) = effective_value(fee_rate, weight, value)?.to_unsigned() {
             let effective_value = eff.to_sat();

@@ -286,7 +286,7 @@ mod tests {
             max_weight: "40000 wu",
             weighted_utxos: &["1 sats/18446744073709551615 wu", "1 sats/164 wu"], // [Weight::MAX, Weight::MIN]
             expected_utxos: &[],
-            expected_error: Some(Overflow(Addition)),
+            expected_error: Some(InsufficentFunds),
             expected_iterations: 0,
         }
         .assert();
