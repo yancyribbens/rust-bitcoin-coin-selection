@@ -615,7 +615,7 @@ mod tests {
             fee_rate: "0",
             lt_fee_rate: "0",
             max_weight: "40000 wu",
-            weighted_utxos: &["21000000 BTC/68 vB", "1 sats/68 vB"], // [Amount::MAX, ,,]
+            weighted_utxos: &["21000000 BTC/68 vB", "1 sats/68 vB"],
             expected_utxos: &[],
             expected_error: Some(Overflow(Addition)),
             expected_iterations: 0,
@@ -628,7 +628,7 @@ mod tests {
         // Adding cost_of_change to the target (upper bound) overflows.
         TestBnB {
             target: "1 sats",
-            cost_of_change: "2100000000000000 sats", // u64::MAX
+            cost_of_change: "2100000000000000 sats",
             fee_rate: "0",
             lt_fee_rate: "0",
             max_weight: "40000 wu",
