@@ -12,22 +12,15 @@ version = "0.9.0"
 description = "Libary providing utility functions to efficiently select a set of UTXOs."
 keywords = ["bitcoin", "coin-selection", "coin", "coinselection", "utxo"]
 readme = "README.md"
-rust-version = "1.63.0"
+rust-version = "1.60"
 
 [package.metadata.docs.rs]
 features = ["rand"]
 
 [dependencies]
-bitcoin = { version = "0.32.9", features = ["arbitrary"] }
+bitcoin = { version = "0.32", features = ["arbitrary"] }
 rand = { version = "0.8.5", optional = true }
-
-[dev-dependencies]
-criterion = "0.3"
-bitcoin-coin-selection = {path = ".", features = ["rand"]}
-rand = "0.8.5"
-arbitrary = { version = "1", features = ["derive"] }
-arbtest = "0.3.1"
-exhaustigen = "0.1.0"
+arbitrary = { version = "=1.0.1" }
 
 [[bench]]
 name = "coin_selection"
