@@ -6,7 +6,7 @@
 # -x (xtrace) enable execution tracing with expanded variables and arguments.
 set -ex
 
-FEATURES="rand"
+FEATURES="arbitrary"
 
 # Sanity checks.
 cargo --version
